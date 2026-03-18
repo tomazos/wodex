@@ -5,6 +5,38 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Wodex</title>
   <style>
+    @font-face {
+      font-family: {{ ui_fonts.family | tojson }};
+      src: url({{ url_for("font_asset", style="regular") | tojson }}) format("truetype");
+      font-style: normal;
+      font-weight: 400;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: {{ ui_fonts.family | tojson }};
+      src: url({{ url_for("font_asset", style="bold") | tojson }}) format("truetype");
+      font-style: normal;
+      font-weight: 700;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: {{ ui_fonts.family | tojson }};
+      src: url({{ url_for("font_asset", style="italic") | tojson }}) format("truetype");
+      font-style: italic;
+      font-weight: 400;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: {{ ui_fonts.family | tojson }};
+      src: url({{ url_for("font_asset", style="boldItalic") | tojson }}) format("truetype");
+      font-style: italic;
+      font-weight: 700;
+      font-display: swap;
+    }
+
     :root {
       color-scheme: light;
       --bg: #f4efe6;
@@ -18,17 +50,31 @@
       --accent-soft: rgba(196, 83, 45, 0.12);
       --accent-deep: #1b6256;
       --accent-deep-soft: rgba(27, 98, 86, 0.1);
+      --chat-fg: {{ ui_colors.chatForeground }};
+      --user-bg: {{ ui_colors.userBackground }};
+      --assistant-bg-odd: {{ ui_colors.assistantOddBackground }};
+      --assistant-bg-even: {{ ui_colors.assistantEvenBackground }};
       --shadow: 0 24px 60px rgba(31, 27, 22, 0.1);
+      --mono: {{ ui_fonts.family | tojson }}, monospace;
+      --font-size: {{ ui_fonts.sizePx }}px;
+      --header-height: 128px;
+      --sidebar-expanded-width: 316px;
     }
 
     * {
       box-sizing: border-box;
     }
 
+    html {
+      font-size: var(--font-size);
+    }
+
     body {
       margin: 0;
-      min-height: 100vh;
-      font-family: Georgia, "Times New Roman", serif;
+      height: 100vh;
+      overflow: hidden;
+      font-family: var(--mono);
+      font-synthesis: none;
       color: var(--ink);
       background:
         radial-gradient(circle at top left, rgba(196, 83, 45, 0.16), transparent 28%),
@@ -38,15 +84,15 @@
     }
 
     .shell {
-      width: min(1320px, calc(100vw - 24px));
-      min-height: calc(100vh - 24px);
-      margin: 12px auto;
+      width: 100vw;
+      height: 100vh;
+      margin: 0;
       display: grid;
-      grid-template-columns: 320px minmax(0, 1fr);
+      grid-template-columns: var(--sidebar-expanded-width) minmax(0, 1fr);
       background: rgba(255, 252, 246, 0.84);
-      border: 1px solid var(--line);
-      border-radius: 28px;
-      box-shadow: var(--shadow);
+      border: 0;
+      border-radius: 0;
+      box-shadow: none;
       backdrop-filter: blur(12px);
       overflow: hidden;
     }
@@ -55,13 +101,21 @@
       display: flex;
       flex-direction: column;
       min-height: 0;
+      overflow: hidden;
       border-right: 1px solid var(--line);
       background: linear-gradient(180deg, rgba(255, 250, 241, 0.96), rgba(239, 232, 218, 0.88));
     }
 
     .sidebar-top {
-      padding: 20px 18px 16px;
-      border-bottom: 1px solid var(--line);
+      flex: 0 0 auto;
+      height: var(--header-height);
+      padding: 18px 0 0;
+      border-bottom: 0;
+      background: linear-gradient(180deg, rgba(255, 250, 241, 0.98), rgba(246, 239, 226, 0.95));
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 10px;
     }
 
     .workspace {
@@ -69,24 +123,38 @@
       flex-direction: column;
       min-width: 0;
       min-height: 0;
+      overflow: visible;
     }
 
     .topbar {
+      flex: 0 0 auto;
       display: flex;
-      justify-content: space-between;
-      gap: 20px;
-      align-items: flex-start;
-      padding: 20px 24px 16px;
+      align-items: stretch;
+      height: var(--header-height);
+      padding: 18px 24px 14px;
       border-bottom: 1px solid var(--line);
       background: linear-gradient(135deg, rgba(255, 255, 255, 0.88), rgba(244, 239, 230, 0.94));
     }
 
-    .brand,
+    .sidebar-headline,
     .title-row {
       display: flex;
       gap: 12px;
       align-items: baseline;
       flex-wrap: wrap;
+    }
+
+    .sidebar-headline {
+      padding: 0 16px;
+    }
+
+    .brand-link {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .brand-link:hover {
+      color: var(--accent);
     }
 
     h1,
@@ -97,29 +165,26 @@
     }
 
     h1 {
-      font-size: clamp(2rem, 3.4vw, 2.8rem);
+      font-size: clamp(1.8rem, 3vw, 2.35rem);
     }
 
     h2 {
-      font-size: clamp(1.4rem, 2.6vw, 2.2rem);
+      font-size: clamp(1.15rem, 2vw, 1.55rem);
     }
 
-    .badge {
-      display: inline-flex;
-      align-items: center;
-      padding: 4px 10px;
-      border-radius: 999px;
-      background: rgba(27, 98, 86, 0.1);
-      color: var(--accent-deep);
-      font-size: 0.78rem;
-      font-weight: 700;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
+    .sessions-toggle {
+      border: 0;
+      border-radius: 0;
+      padding: 8px 12px;
+      background: transparent;
+      color: var(--ink);
+      font: inherit;
+      cursor: pointer;
+      white-space: nowrap;
     }
 
-    .badge.alt {
-      background: rgba(196, 83, 45, 0.12);
-      color: var(--accent);
+    .sessions-toggle:hover {
+      background: rgba(255, 255, 255, 0.48);
     }
 
     .meta,
@@ -139,33 +204,53 @@
     }
 
     .status {
-      min-height: 1.4rem;
+      flex: 0 0 auto;
       padding: 10px 24px 0;
       font-size: 0.95rem;
     }
 
     .sidebar-actions,
-    .composer-actions,
     .header-side {
       display: flex;
-      gap: 10px;
       align-items: center;
       flex-wrap: wrap;
     }
 
-    .header-side {
-      justify-content: flex-end;
-      text-align: right;
+    .sidebar-actions {
+      align-self: stretch;
+      gap: 14px;
+      padding: 8px 16px;
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.18);
+    }
+
+    .sidebar-actions > button {
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      padding: 0;
+    }
+
+    .sidebar-actions > button:hover {
+      background: transparent;
+      color: var(--accent);
     }
 
     .thread-list {
       flex: 1;
       min-height: 0;
       overflow-y: auto;
-      padding: 12px;
+      padding: 10px;
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      gap: 8px;
+      font-family: var(--mono);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .thread-list[hidden] {
+      display: none;
     }
 
     .thread-empty,
@@ -181,9 +266,9 @@
     .thread-card {
       width: 100%;
       border: 1px solid var(--line);
-      border-radius: 20px;
+      border-radius: 16px;
       background: rgba(255, 255, 255, 0.54);
-      padding: 14px 14px 12px;
+      padding: 10px 10px 9px;
       text-align: left;
       cursor: pointer;
       transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
@@ -211,58 +296,79 @@
       text-overflow: ellipsis;
     }
 
-    .thread-card-preview {
-      margin: 0 0 10px;
+    .thread-card-meta {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+      gap: 2px;
+      align-items: center;
       color: var(--muted);
-      font-size: 0.92rem;
-      line-height: 1.4;
-      display: -webkit-box;
-      -webkit-line-clamp: 2;
-      -webkit-box-orient: vertical;
-      overflow: hidden;
+      font-size: 0.74rem;
+      line-height: 1.35;
+      font-variant-numeric: tabular-nums;
     }
 
-    .thread-card-meta {
-      display: flex;
-      justify-content: space-between;
-      gap: 10px;
-      color: var(--muted);
-      font-size: 0.82rem;
+    .thread-card-created {
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    .thread-card-arrow {
+      font-size: 0.9rem;
+      opacity: 0.8;
+    }
+
+    .thread-card-updated {
+      text-align: right;
+      white-space: nowrap;
     }
 
     .chat {
       flex: 1;
       min-height: 0;
       overflow-y: auto;
-      padding: 20px 24px;
+      padding: 0;
       display: flex;
       flex-direction: column;
-      gap: 14px;
+      font-family: var(--mono);
+      color: var(--chat-fg);
+    }
+
+    .chat.chat-bottom::before {
+      content: "";
+      flex: 1 0 auto;
     }
 
     .message {
-      max-width: min(82%, 780px);
+      width: 100%;
+      max-width: 100%;
       padding: 14px 16px;
-      border-radius: 18px;
-      border: 1px solid var(--line);
+      border-radius: 0;
       line-height: 1.5;
       white-space: pre-wrap;
       font-size: 1rem;
+      align-self: flex-start;
+      color: var(--chat-fg);
     }
 
     .message.user {
-      align-self: flex-end;
-      background: var(--accent-soft);
-      border-color: rgba(196, 83, 45, 0.18);
+      background: var(--user-bg);
     }
 
-    .message.assistant {
-      align-self: flex-start;
-      background: var(--accent-deep-soft);
-      border-color: rgba(27, 98, 86, 0.18);
+    .message.assistant.assistant-odd {
+      background: var(--assistant-bg-odd);
+    }
+
+    .message.assistant.assistant-even {
+      background: var(--assistant-bg-even);
+    }
+
+    .message.thinking {
+      color: var(--muted);
+      font-style: italic;
     }
 
     .composer {
+      flex: 0 0 auto;
       padding: 18px 24px 24px;
       border-top: 1px solid var(--line);
       background: rgba(255, 252, 246, 0.96);
@@ -275,13 +381,14 @@
 
     textarea {
       width: 100%;
-      min-height: 112px;
-      resize: vertical;
+      min-height: 0;
+      resize: none;
+      overflow-y: hidden;
       padding: 14px 16px;
       border-radius: 18px;
       border: 1px solid var(--line);
       background: var(--panel-strong);
-      color: var(--ink);
+      color: var(--chat-fg);
       font: inherit;
       line-height: 1.5;
     }
@@ -294,9 +401,27 @@
     button {
       border: 0;
       border-radius: 999px;
-      padding: 10px 15px;
+      padding: 10px 14px;
       font: inherit;
+      font-family: var(--mono);
+      font-synthesis: none;
       cursor: pointer;
+    }
+
+    .icon-button {
+      min-width: 1.2rem;
+      padding-left: 0;
+      padding-right: 0;
+      text-align: center;
+      font-size: 1.1rem;
+      line-height: 1;
+    }
+
+    .shell.sessions-collapsed .chat,
+    .shell.sessions-collapsed .composer,
+    .shell.sessions-collapsed .status {
+      margin-left: calc(-1 * var(--sidebar-expanded-width));
+      width: calc(100% + var(--sidebar-expanded-width));
     }
 
     .primary {
@@ -326,25 +451,29 @@
 
     @media (max-width: 940px) {
       .shell {
+        height: 100vh;
         grid-template-columns: 1fr;
-        width: calc(100vw - 16px);
-        min-height: calc(100vh - 16px);
-        margin: 8px auto;
+        grid-template-rows: minmax(240px, 38vh) minmax(0, 1fr);
+        width: 100vw;
+        margin: 0;
       }
 
       .sidebar {
         border-right: 0;
         border-bottom: 1px solid var(--line);
-        max-height: 38vh;
+        max-height: none;
       }
 
       .topbar {
-        flex-direction: column;
+        height: auto;
+        min-height: var(--header-height);
       }
 
-      .header-side {
-        text-align: left;
-        justify-content: flex-start;
+      .shell.sessions-collapsed .chat,
+      .shell.sessions-collapsed .composer,
+      .shell.sessions-collapsed .status {
+        margin-left: 0;
+        width: 100%;
       }
     }
 
@@ -353,9 +482,10 @@
         max-width: 100%;
       }
 
-      .composer-actions,
       .sidebar-actions {
-        align-items: stretch;
+        gap: 10px;
+        padding-left: 12px;
+        padding-right: 12px;
       }
     }
   </style>
@@ -364,15 +494,15 @@
   <main class="shell">
     <aside class="sidebar">
       <div class="sidebar-top">
-        <div class="brand">
-          <h1>Wodex</h1>
-          <span class="badge">thread browser</span>
+        <div class="sidebar-headline">
+          <a class="brand-link" href="https://github.com/tomazos/wodex" target="_blank" rel="noreferrer">
+            <h1>Wodex</h1>
+          </a>
         </div>
-        <p class="meta">Browse local Codex sessions and continue any thread from this window.</p>
-        <p class="meta">New threads start in <code id="default-cwd">{{ default_cwd }}</code>.</p>
-        <div class="sidebar-actions" style="margin-top: 14px;">
-          <button type="button" class="secondary" id="new-thread-button">New Chat</button>
-          <button type="button" class="ghost" id="refresh-threads-button">Refresh</button>
+        <div class="sidebar-actions">
+          <button type="button" class="sessions-toggle" id="sessions-toggle" aria-expanded="true">▾ Sessions</button>
+          <button type="button" class="secondary icon-button" id="new-thread-button" title="New chat" aria-label="New chat">+</button>
+          <button type="button" class="ghost icon-button" id="refresh-threads-button" title="Refresh threads" aria-label="Refresh threads">↻</button>
         </div>
       </div>
       <div id="thread-list" class="thread-list" aria-label="Available threads"></div>
@@ -383,26 +513,17 @@
         <div>
           <div class="title-row">
             <h2 id="thread-title">Choose a thread</h2>
-            <span class="badge alt" id="thread-source">local codex</span>
           </div>
-          <p class="meta" id="thread-meta">Select a thread from the left, or start a fresh one here.</p>
-        </div>
-        <div class="header-side">
-          <p class="hint" id="thread-detail">No thread selected.</p>
+          <p class="meta" id="thread-meta">No thread selected yet.</p>
         </div>
       </header>
 
-      <div id="status" class="status"></div>
+      <div id="status" class="status" hidden></div>
       <section id="chat" class="chat" aria-live="polite"></section>
 
       <section class="composer">
         <form id="chat-form">
-          <label for="prompt" class="hint">Prompt</label>
-          <textarea id="prompt" name="prompt" placeholder="Ask Codex something..."></textarea>
-          <div class="composer-actions">
-            <div class="hint" id="composer-hint">Sending with no selected thread creates a new conversation.</div>
-            <button type="submit" class="primary" id="send-button">Send</button>
-          </div>
+          <textarea id="prompt" name="prompt" placeholder="Ask Codex something..." aria-label="Prompt"></textarea>
         </form>
       </section>
     </section>
@@ -410,37 +531,70 @@
 
   <script>
     const ACTIVE_THREAD_KEY = "wodex.activeThreadId";
+    const SESSIONS_COLLAPSED_KEY = "wodex.sessionsCollapsed";
+    const WINDOW_ID_KEY = "wodex.windowId";
+    const MAX_ACTIVE_THREAD_TITLE_CHARS = 60;
+    const WINDOW_HEARTBEAT_MS = {{ window_heartbeat_ms | tojson }};
+    const DEFAULT_EMPTY_CHAT_MESSAGE = "Select a thread from the left, or start writing to create a new one.";
+    const EMPTY_RENDERED_THREAD_MESSAGE = "This thread has no rendered messages yet.";
+    const NEW_CHAT_TITLE = "New Chat";
+    const NO_THREAD_YET_LABEL = "No thread yet.";
 
-    const defaultCwdEl = document.getElementById("default-cwd");
+    const shellEl = document.querySelector(".shell");
+    const workspaceEl = document.querySelector(".workspace");
+    const topbarEl = document.querySelector(".topbar");
+    const composerEl = document.querySelector(".composer");
+    const sessionsToggleEl = document.getElementById("sessions-toggle");
     const threadListEl = document.getElementById("thread-list");
     const threadTitleEl = document.getElementById("thread-title");
     const threadMetaEl = document.getElementById("thread-meta");
-    const threadSourceEl = document.getElementById("thread-source");
-    const threadDetailEl = document.getElementById("thread-detail");
     const chatEl = document.getElementById("chat");
     const statusEl = document.getElementById("status");
     const formEl = document.getElementById("chat-form");
     const promptEl = document.getElementById("prompt");
-    const sendButtonEl = document.getElementById("send-button");
     const newThreadButtonEl = document.getElementById("new-thread-button");
     const refreshThreadsButtonEl = document.getElementById("refresh-threads-button");
-    const composerHintEl = document.getElementById("composer-hint");
 
     let threads = [];
     let activeThreadId = sessionStorage.getItem(ACTIVE_THREAD_KEY) || null;
     let activeThread = null;
-    let activeMessages = [];
-    let defaultCwd = defaultCwdEl.textContent;
+    let displayMessages = [];
+    let activeTurnId = null;
+    let thinkingSinceMs = null;
+    let emptyChatMessage = DEFAULT_EMPTY_CHAT_MESSAGE;
     let isSubmitting = false;
+    let heartbeatTimer = null;
+    let thinkingTimer = null;
+    let sessionsCollapsed = sessionStorage.getItem(SESSIONS_COLLAPSED_KEY) === "1";
+    let windowId = sessionStorage.getItem(WINDOW_ID_KEY);
+    let eventSource = null;
+    const ignoredClientMessageIds = new Set();
+
+    if (!windowId) {
+      windowId = self.crypto && self.crypto.randomUUID
+        ? self.crypto.randomUUID()
+        : `wodex-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      sessionStorage.setItem(WINDOW_ID_KEY, windowId);
+    }
+
+    function createClientMessageId() {
+      return self.crypto && self.crypto.randomUUID
+        ? self.crypto.randomUUID()
+        : `msg-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    }
 
     function setStatus(text, isError = false) {
       statusEl.textContent = text;
+      statusEl.hidden = !text;
       statusEl.style.color = isError ? "var(--accent)" : "var(--muted)";
+      requestAnimationFrame(() => {
+        resizePrompt();
+        updateChatLayout();
+      });
     }
 
     function setBusy(nextBusy) {
       isSubmitting = nextBusy;
-      sendButtonEl.disabled = nextBusy;
       newThreadButtonEl.disabled = nextBusy;
       refreshThreadsButtonEl.disabled = nextBusy;
       promptEl.disabled = nextBusy;
@@ -455,47 +609,293 @@
       }
     }
 
+    function setSessionsCollapsed(nextCollapsed) {
+      sessionsCollapsed = Boolean(nextCollapsed);
+      sessionStorage.setItem(SESSIONS_COLLAPSED_KEY, sessionsCollapsed ? "1" : "0");
+      shellEl.classList.toggle("sessions-collapsed", sessionsCollapsed);
+      threadListEl.hidden = sessionsCollapsed;
+      sessionsToggleEl.textContent = `${sessionsCollapsed ? "▸" : "▾"} Sessions`;
+      sessionsToggleEl.setAttribute("aria-expanded", String(!sessionsCollapsed));
+    }
+
+    async function postWindowPresence(path) {
+      const response = await fetch(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ windowId }),
+        keepalive: true,
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || `Window presence failed with ${response.status}`);
+      }
+      return payload;
+    }
+
+    function beaconWindowClose() {
+      const body = JSON.stringify({ windowId });
+      if (!navigator.sendBeacon) {
+        fetch("/api/window/close", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body,
+          keepalive: true,
+        }).catch(() => {});
+        return;
+      }
+      navigator.sendBeacon(
+        "/api/window/close",
+        new Blob([body], { type: "application/json" }),
+      );
+    }
+
+    async function registerWindow() {
+      await postWindowPresence("/api/window/open");
+      if (heartbeatTimer !== null) {
+        clearInterval(heartbeatTimer);
+      }
+      heartbeatTimer = window.setInterval(() => {
+        postWindowPresence("/api/window/heartbeat").catch(() => {});
+      }, WINDOW_HEARTBEAT_MS);
+    }
+
     function formatTimestamp(timestampSeconds) {
       if (!timestampSeconds) {
         return "Unknown time";
       }
-      return new Date(timestampSeconds * 1000).toLocaleString();
+      const date = new Date(timestampSeconds * 1000);
+      const parts = [
+        date.getFullYear(),
+        String(date.getMonth() + 1).padStart(2, "0"),
+        String(date.getDate()).padStart(2, "0"),
+      ];
+      const time = [
+        String(date.getHours()).padStart(2, "0"),
+        String(date.getMinutes()).padStart(2, "0"),
+      ];
+      return `${parts.join("-")} ${time.join(":")}`;
+    }
+
+    function formatElapsedDuration(ms) {
+      const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+      const hours = Math.floor(totalSeconds / 3600);
+      const minutes = Math.floor((totalSeconds % 3600) / 60);
+      const seconds = totalSeconds % 60;
+
+      if (hours > 0) {
+        return `${hours}h${String(minutes).padStart(2, "0")}m${String(seconds).padStart(2, "0")}s`;
+      }
+      if (minutes > 0) {
+        return `${minutes}m${String(seconds).padStart(2, "0")}s`;
+      }
+      return `${seconds}s`;
+    }
+
+    function formatThinkingLabel() {
+      if (thinkingSinceMs === null) {
+        return "Thinking...";
+      }
+      return `Thinking... ${formatElapsedDuration(Date.now() - thinkingSinceMs)}`;
+    }
+
+    function truncateTitle(text, maxLength = MAX_ACTIVE_THREAD_TITLE_CHARS) {
+      const value = String(text || "");
+      if (value.length <= maxLength) {
+        return value;
+      }
+      return `${value.slice(0, maxLength)}...`;
+    }
+
+    function normalizeMessages(messages) {
+      return (messages || []).map((message) => ({
+        role: message.role,
+        text: message.text,
+        completed: true,
+      }));
+    }
+
+    function resetThinkingState() {
+      activeTurnId = null;
+      thinkingSinceMs = null;
+      if (thinkingTimer !== null) {
+        clearInterval(thinkingTimer);
+        thinkingTimer = null;
+      }
+    }
+
+    function updateThinkingIndicator() {
+      const indicator = document.getElementById("thinking-indicator");
+      if (indicator !== null) {
+        indicator.textContent = formatThinkingLabel();
+      }
+    }
+
+    function syncThinkingTimer() {
+      if (thinkingTimer !== null) {
+        clearInterval(thinkingTimer);
+        thinkingTimer = null;
+      }
+      if (!activeTurnId) {
+        return;
+      }
+      updateThinkingIndicator();
+      thinkingTimer = window.setInterval(updateThinkingIndicator, 1000);
+    }
+
+    function resizePrompt() {
+      promptEl.style.height = "0px";
+
+      const promptStyle = window.getComputedStyle(promptEl);
+      const composerStyle = window.getComputedStyle(composerEl);
+      const lineHeight = parseFloat(promptStyle.lineHeight) || 24;
+      const promptVerticalChrome =
+        parseFloat(promptStyle.paddingTop) +
+        parseFloat(promptStyle.paddingBottom) +
+        parseFloat(promptStyle.borderTopWidth) +
+        parseFloat(promptStyle.borderBottomWidth);
+      const composerVerticalChrome =
+        parseFloat(composerStyle.paddingTop) +
+        parseFloat(composerStyle.paddingBottom) +
+        parseFloat(composerStyle.borderTopWidth);
+      const minPromptHeight = lineHeight + promptVerticalChrome;
+      const totalConversationHeight =
+        workspaceEl.clientHeight -
+        topbarEl.offsetHeight -
+        (statusEl.hidden ? 0 : statusEl.offsetHeight);
+      const maxComposerHeight = Math.max(minPromptHeight + composerVerticalChrome, totalConversationHeight / 2);
+      const maxPromptHeight = Math.max(minPromptHeight, maxComposerHeight - composerVerticalChrome);
+      const nextHeight = Math.min(promptEl.scrollHeight, maxPromptHeight);
+
+      promptEl.style.height = `${Math.max(minPromptHeight, nextHeight)}px`;
+      promptEl.style.overflowY = promptEl.scrollHeight > maxPromptHeight ? "auto" : "hidden";
+    }
+
+    function updateChatLayout() {
+      const hasMessages = chatEl.querySelector(".message") !== null;
+      const shouldBottomAlign = hasMessages && chatEl.scrollHeight <= chatEl.clientHeight + 1;
+      chatEl.classList.toggle("chat-bottom", shouldBottomAlign);
     }
 
     function clearMainPane(message) {
       activeThread = null;
-      activeMessages = [];
-      threadTitleEl.textContent = "New Chat";
-      threadSourceEl.textContent = "draft";
-      threadMetaEl.textContent = `Send a message to start a new Codex thread in ${defaultCwd}.`;
-      threadDetailEl.textContent = "No thread selected yet.";
-      composerHintEl.textContent = "Sending with no selected thread creates a new conversation.";
-      chatEl.innerHTML = "";
-
-      const empty = document.createElement("div");
-      empty.className = "chat-empty";
-      empty.textContent = message || "Select a thread from the left, or start writing to create a new one.";
-      chatEl.appendChild(empty);
+      displayMessages = [];
+      emptyChatMessage = message || DEFAULT_EMPTY_CHAT_MESSAGE;
+      resetThinkingState();
+      threadTitleEl.textContent = NEW_CHAT_TITLE;
+      threadTitleEl.title = NEW_CHAT_TITLE;
+      threadMetaEl.textContent = NO_THREAD_YET_LABEL;
+      renderTranscript();
     }
 
-    function renderMessages(messages) {
-      chatEl.innerHTML = "";
-      if (!messages.length) {
-        const empty = document.createElement("div");
-        empty.className = "chat-empty";
-        empty.textContent = "This thread has no rendered messages yet.";
-        chatEl.appendChild(empty);
+    function appendUserMessage(text, clientMessageId = null, afterCompletedOnly = false) {
+      const nextMessage = {
+        role: "user",
+        text,
+        clientMessageId,
+        completed: true,
+      };
+
+      if (!afterCompletedOnly) {
+        displayMessages.push(nextMessage);
         return;
       }
 
-      for (const message of messages) {
+      const firstIncompleteIndex = displayMessages.findIndex((message) => message.completed === false);
+      if (firstIncompleteIndex === -1) {
+        displayMessages.push(nextMessage);
+        return;
+      }
+
+      displayMessages.splice(firstIncompleteIndex, 0, nextMessage);
+    }
+
+    function removeUserMessage(clientMessageId) {
+      displayMessages = displayMessages.filter((message) => message.clientMessageId !== clientMessageId);
+    }
+
+    function upsertAssistantMessage(itemId, text, { completed = false } = {}) {
+      const nextText = String(text || "");
+      const existingIndex = displayMessages.findIndex((message) => message.itemId === itemId);
+      if (existingIndex >= 0) {
+        displayMessages[existingIndex].text = nextText;
+        displayMessages[existingIndex].completed = completed;
+        return;
+      }
+      if (!nextText) {
+        return;
+      }
+      displayMessages.push({
+        role: "assistant",
+        text: nextText,
+        itemId,
+        completed,
+      });
+    }
+
+    function replaceLiveAssistantMessages(agentMessages) {
+      displayMessages = displayMessages.filter((message) => !message.itemId);
+      for (const message of agentMessages || []) {
+        if (!message.text) {
+          continue;
+        }
+        displayMessages.push({
+          role: "assistant",
+          text: message.text,
+          itemId: message.itemId,
+          completed: Boolean(message.completed),
+        });
+      }
+    }
+
+    function syncLiveState(live) {
+      const nextLive = live || {};
+      activeTurnId = nextLive.activeTurnId || null;
+      thinkingSinceMs = nextLive.thinkingSince ? nextLive.thinkingSince * 1000 : null;
+      replaceLiveAssistantMessages(nextLive.agentMessages || []);
+      syncThinkingTimer();
+    }
+
+    function renderTranscript() {
+      chatEl.innerHTML = "";
+      const renderMessages = [...displayMessages];
+      if (activeTurnId) {
+        renderMessages.push({
+          role: "assistant",
+          text: formatThinkingLabel(),
+          isThinking: true,
+        });
+      }
+
+      if (!renderMessages.length) {
+        const empty = document.createElement("div");
+        empty.className = "chat-empty";
+        empty.textContent = emptyChatMessage;
+        chatEl.appendChild(empty);
+        updateChatLayout();
+        return;
+      }
+
+      let assistantCount = 0;
+      for (const message of renderMessages) {
         const article = document.createElement("article");
-        article.className = `message ${message.role}`;
-        article.textContent = message.text;
+        article.classList.add("message", message.role);
+        if (message.role === "assistant") {
+          assistantCount += 1;
+          article.classList.add(assistantCount % 2 === 0 ? "assistant-even" : "assistant-odd");
+        }
+        if (message.isThinking) {
+          article.classList.add("thinking");
+          article.id = "thinking-indicator";
+          article.textContent = formatThinkingLabel();
+        } else {
+          article.textContent = message.text;
+        }
         chatEl.appendChild(article);
       }
 
+      updateChatLayout();
       chatEl.scrollTop = chatEl.scrollHeight;
+      updateThinkingIndicator();
     }
 
     function renderThreadList() {
@@ -518,21 +918,24 @@
         const title = document.createElement("p");
         title.className = "thread-card-title";
         title.textContent = thread.title;
+        title.title = thread.title;
         button.appendChild(title);
-
-        const preview = document.createElement("p");
-        preview.className = "thread-card-preview";
-        preview.textContent = thread.preview || "No preview available.";
-        button.appendChild(preview);
 
         const meta = document.createElement("div");
         meta.className = "thread-card-meta";
 
-        const source = document.createElement("span");
-        source.textContent = thread.source || "unknown";
-        meta.appendChild(source);
+        const created = document.createElement("span");
+        created.className = "thread-card-created";
+        created.textContent = formatTimestamp(thread.createdAt);
+        meta.appendChild(created);
+
+        const arrow = document.createElement("span");
+        arrow.className = "thread-card-arrow";
+        arrow.textContent = "↔";
+        meta.appendChild(arrow);
 
         const updated = document.createElement("span");
+        updated.className = "thread-card-updated";
         updated.textContent = formatTimestamp(thread.updatedAt);
         meta.appendChild(updated);
 
@@ -543,16 +946,17 @@
 
     function renderActiveThread() {
       if (!activeThread) {
-        clearMainPane();
+        threadTitleEl.textContent = NEW_CHAT_TITLE;
+        threadTitleEl.title = NEW_CHAT_TITLE;
+        threadMetaEl.textContent = activeThreadId || NO_THREAD_YET_LABEL;
+        renderTranscript();
         return;
       }
 
-      threadTitleEl.textContent = activeThread.title;
-      threadSourceEl.textContent = activeThread.source || "unknown";
-      threadMetaEl.textContent = activeThread.preview || "No preview available.";
-      threadDetailEl.textContent = `Updated ${formatTimestamp(activeThread.updatedAt)} · ${activeThread.id}`;
-      composerHintEl.textContent = `Replying in thread ${activeThread.id}.`;
-      renderMessages(activeMessages);
+      threadTitleEl.textContent = truncateTitle(activeThread.title);
+      threadTitleEl.title = activeThread.title;
+      threadMetaEl.textContent = activeThread.id || "No session id";
+      renderTranscript();
     }
 
     async function fetchThreads() {
@@ -573,13 +977,14 @@
       return payload;
     }
 
-    async function sendMessage(message) {
+    async function sendMessage(message, clientMessageId) {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message,
           threadId: activeThreadId,
+          clientMessageId,
         }),
       });
       const payload = await response.json();
@@ -591,8 +996,6 @@
 
     async function refreshThreadList({ selectDefault = false } = {}) {
       const payload = await fetchThreads();
-      defaultCwd = payload.cwd || defaultCwd;
-      defaultCwdEl.textContent = defaultCwd;
       threads = payload.threads || [];
 
       if (activeThreadId && !threads.some((thread) => thread.id === activeThreadId)) {
@@ -618,10 +1021,12 @@
       const payload = await fetchThread(threadId);
       setActiveThreadId(threadId);
       activeThread = payload.thread;
-      activeMessages = payload.messages || [];
+      displayMessages = normalizeMessages(payload.messages);
+      emptyChatMessage = EMPTY_RENDERED_THREAD_MESSAGE;
+      syncLiveState(payload.live);
       renderThreadList();
       renderActiveThread();
-      setStatus("Ready.");
+      setStatus("");
     }
 
     function startDraft() {
@@ -629,10 +1034,141 @@
       clearMainPane("Fresh draft. Sending a message here will create a new Codex thread.");
       renderThreadList();
       promptEl.focus();
-      setStatus("Ready.");
+      resizePrompt();
+      setStatus("");
+    }
+
+    async function handleTurnCompleted(eventPayload) {
+      if (eventPayload.threadId !== activeThreadId) {
+        await refreshThreadList().catch(() => {});
+        return;
+      }
+
+      resetThinkingState();
+      await refreshThreadList().catch(() => {});
+      try {
+        const payload = await fetchThread(eventPayload.threadId);
+        activeThread = payload.thread;
+        displayMessages = normalizeMessages(payload.messages);
+        emptyChatMessage = EMPTY_RENDERED_THREAD_MESSAGE;
+        syncLiveState(payload.live);
+        renderThreadList();
+        renderActiveThread();
+        if (eventPayload.status && eventPayload.status !== "completed") {
+          setStatus(`Turn ended with status: ${eventPayload.status}.`, true);
+        } else {
+          setStatus("");
+        }
+      } catch (error) {
+        setStatus(error.message || "Failed to refresh thread after completion.", true);
+      }
+    }
+
+    async function handleServerEvent(eventPayload) {
+      const threadId = eventPayload.threadId || null;
+
+      if (threadId && threadId !== activeThreadId) {
+        if (eventPayload.kind === "user_message" || eventPayload.kind === "turn_completed") {
+          refreshThreadList().catch(() => {});
+        }
+        return;
+      }
+
+      switch (eventPayload.kind) {
+        case "user_message":
+          if (eventPayload.clientMessageId && ignoredClientMessageIds.has(eventPayload.clientMessageId)) {
+            ignoredClientMessageIds.delete(eventPayload.clientMessageId);
+            return;
+          }
+          if (eventPayload.text) {
+            appendUserMessage(eventPayload.text, null, Boolean(activeTurnId));
+            renderActiveThread();
+          }
+          break;
+
+        case "turn_started":
+          activeTurnId = eventPayload.turnId || eventPayload.live?.activeTurnId || activeTurnId;
+          if (eventPayload.live?.thinkingSince) {
+            thinkingSinceMs = eventPayload.live.thinkingSince * 1000;
+          }
+          syncThinkingTimer();
+          renderActiveThread();
+          break;
+
+        case "agent_message_started":
+          if (eventPayload.live?.activeTurnId) {
+            activeTurnId = eventPayload.live.activeTurnId;
+          }
+          if (eventPayload.resetThinkingTimer && eventPayload.live?.thinkingSince) {
+            thinkingSinceMs = eventPayload.live.thinkingSince * 1000;
+          }
+          if (eventPayload.text) {
+            upsertAssistantMessage(eventPayload.itemId, eventPayload.text, { completed: false });
+          }
+          syncThinkingTimer();
+          renderActiveThread();
+          break;
+
+        case "agent_message_delta":
+          if (eventPayload.live?.activeTurnId) {
+            activeTurnId = eventPayload.live.activeTurnId;
+          }
+          if (eventPayload.resetThinkingTimer && eventPayload.live?.thinkingSince) {
+            thinkingSinceMs = eventPayload.live.thinkingSince * 1000;
+          }
+          upsertAssistantMessage(
+            eventPayload.itemId,
+            eventPayload.text || eventPayload.delta || "",
+            { completed: false },
+          );
+          syncThinkingTimer();
+          renderActiveThread();
+          break;
+
+        case "agent_message_completed":
+          upsertAssistantMessage(eventPayload.itemId, eventPayload.text || "", { completed: true });
+          renderActiveThread();
+          break;
+
+        case "turn_error":
+          if (!eventPayload.willRetry) {
+            setStatus(eventPayload.message || "Codex reported an error.", true);
+          }
+          break;
+
+        case "turn_completed":
+          await handleTurnCompleted(eventPayload);
+          break;
+
+        default:
+          break;
+      }
+    }
+
+    function connectEventStream() {
+      if (eventSource !== null) {
+        eventSource.close();
+      }
+      eventSource = new EventSource("/api/events");
+      eventSource.onmessage = (event) => {
+        if (!event.data) {
+          return;
+        }
+        try {
+          const payload = JSON.parse(event.data);
+          handleServerEvent(payload).catch((error) => {
+            setStatus(error.message || "Failed to handle a live update.", true);
+          });
+        } catch (error) {
+          setStatus(error.message || "Failed to parse a live update.", true);
+        }
+      };
     }
 
     async function initialize() {
+      setSessionsCollapsed(sessionsCollapsed);
+      connectEventStream();
+      await registerWindow();
       setStatus("Loading threads...");
       await refreshThreadList({ selectDefault: true });
 
@@ -650,7 +1186,8 @@
         clearMainPane();
       }
 
-      setStatus("Ready.");
+      resizePrompt();
+      setStatus("");
     }
 
     threadListEl.addEventListener("click", async (event) => {
@@ -678,35 +1215,77 @@
         return;
       }
 
-      const optimisticMessages = [...activeMessages, { role: "user", text: message }, { role: "assistant", text: "Thinking..." }];
-      renderMessages(optimisticMessages);
-      setBusy(true);
-      setStatus("Waiting for Codex...");
+      const hadActiveTurn = Boolean(activeTurnId);
+      const clientMessageId = createClientMessageId();
+      ignoredClientMessageIds.add(clientMessageId);
 
+      promptEl.value = "";
+      resizePrompt();
+      appendUserMessage(message, clientMessageId, hadActiveTurn);
+      if (!hadActiveTurn) {
+        thinkingSinceMs = Date.now();
+      }
+      renderActiveThread();
+      syncThinkingTimer();
+      setStatus("");
+
+      setBusy(true);
       try {
-        const payload = await sendMessage(message);
+        const payload = await sendMessage(message, clientMessageId);
         setActiveThreadId(payload.threadId);
-        activeThread = payload.thread;
-        activeMessages = payload.messages || [];
-        promptEl.value = "";
+        if (!activeThread || activeThread.id !== payload.threadId) {
+          activeThread = {
+            id: payload.threadId,
+            title: activeThread?.title || NEW_CHAT_TITLE,
+          };
+        }
+        emptyChatMessage = EMPTY_RENDERED_THREAD_MESSAGE;
+        if (payload.mode === "start") {
+          syncLiveState(payload.live);
+        } else {
+          activeTurnId = payload.live?.activeTurnId || payload.turnId || activeTurnId;
+          if (payload.live?.thinkingSince) {
+            thinkingSinceMs = payload.live.thinkingSince * 1000;
+          }
+          syncThinkingTimer();
+        }
         await refreshThreadList();
         renderActiveThread();
-        promptEl.focus();
-        setStatus("Reply received.");
       } catch (error) {
-        try {
-          await refreshThreadList();
-          if (activeThreadId) {
-            await selectThread(activeThreadId);
-          } else {
-            clearMainPane();
-          }
-        } catch (_) {
+        ignoredClientMessageIds.delete(clientMessageId);
+        removeUserMessage(clientMessageId);
+        if (!hadActiveTurn) {
+          resetThinkingState();
+        } else {
+          syncThinkingTimer();
         }
+        promptEl.value = message;
+        resizePrompt();
+        renderActiveThread();
         setStatus(error.message || "Request failed.", true);
       } finally {
         setBusy(false);
+        promptEl.focus();
       }
+    });
+
+    promptEl.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" || event.shiftKey || event.isComposing) {
+        return;
+      }
+      event.preventDefault();
+      if (!isSubmitting) {
+        formEl.requestSubmit();
+      }
+    });
+
+    promptEl.addEventListener("input", () => {
+      resizePrompt();
+      updateChatLayout();
+    });
+
+    sessionsToggleEl.addEventListener("click", () => {
+      setSessionsCollapsed(!sessionsCollapsed);
     });
 
     newThreadButtonEl.addEventListener("click", () => {
@@ -729,13 +1308,37 @@
           await selectThread(activeThreadId);
         } else {
           clearMainPane();
-          setStatus("Thread list refreshed.");
+          setStatus("");
         }
       } catch (error) {
         setStatus(error.message || "Refresh failed.", true);
       } finally {
         setBusy(false);
       }
+    });
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") {
+        postWindowPresence("/api/window/heartbeat").catch(() => {});
+      }
+    });
+
+    window.addEventListener("pagehide", () => {
+      if (heartbeatTimer !== null) {
+        clearInterval(heartbeatTimer);
+      }
+      if (thinkingTimer !== null) {
+        clearInterval(thinkingTimer);
+      }
+      if (eventSource !== null) {
+        eventSource.close();
+      }
+      beaconWindowClose();
+    });
+
+    window.addEventListener("resize", () => {
+      resizePrompt();
+      updateChatLayout();
     });
 
     initialize().catch((error) => {

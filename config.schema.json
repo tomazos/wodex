@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Wodex Configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "server",
+    "codex",
+    "windows",
+    "ui"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "server": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "host",
+        "port",
+        "startupTimeoutSeconds"
+      ],
+      "properties": {
+        "host": {
+          "type": "string",
+          "minLength": 1
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "startupTimeoutSeconds": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    },
+    "codex": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cwd",
+        "threadListLimit"
+      ],
+      "properties": {
+        "cwd": {
+          "type": "string",
+          "minLength": 1
+        },
+        "threadListLimit": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "windows": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "heartbeatSeconds",
+        "staleSeconds",
+        "shutdownGraceSeconds"
+      ],
+      "properties": {
+        "heartbeatSeconds": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "staleSeconds": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "shutdownGraceSeconds": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "ui": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fonts",
+        "colorscheme"
+      ],
+      "properties": {
+        "fonts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "family",
+            "sizePx",
+            "files"
+          ],
+          "properties": {
+            "family": {
+              "type": "string",
+              "minLength": 1
+            },
+            "sizePx": {
+              "type": "integer",
+              "minimum": 8
+            },
+            "files": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "regular",
+                "bold",
+                "italic",
+                "boldItalic"
+              ],
+              "properties": {
+                "regular": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "bold": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "italic": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "boldItalic": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        },
+        "colorscheme": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "assistantOddBackground",
+            "assistantEvenBackground",
+            "userBackground",
+            "chatForeground"
+          ],
+          "properties": {
+            "assistantOddBackground": {
+              "type": "string",
+              "pattern": "^#[0-9A-Fa-f]{6}$"
+            },
+            "assistantEvenBackground": {
+              "type": "string",
+              "pattern": "^#[0-9A-Fa-f]{6}$"
+            },
+            "userBackground": {
+              "type": "string",
+              "pattern": "^#[0-9A-Fa-f]{6}$"
+            },
+            "chatForeground": {
+              "type": "string",
+              "pattern": "^#[0-9A-Fa-f]{6}$"
+            }
+          }
+        }
+      }
+    }
+  }
+}
