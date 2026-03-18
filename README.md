@@ -2,7 +2,7 @@
 
 Version: `0.1.0`
 
-Wodex is a local web UI for Codex. It starts a local `codex app-server` process, lists available Codex threads, and lets you browse and continue them in a browser.
+Wodex is a local web UI for Codex, written by Codex. It starts a local `codex app-server` process, lists available Codex threads, and lets you browse and continue them in a browser.
 
 The backend is a small Flask app served locally with Waitress rather than Flask's development server.
 
