@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+
+SCRIPT_PATH=$(readlink -f "$0")
+BIN_DIR=$(dirname "$SCRIPT_PATH")
+PROJECT_DIR=$(dirname "$BIN_DIR")
+
+exec "$PROJECT_DIR/.venv/bin/python" "$PROJECT_DIR/run.py" "$@"

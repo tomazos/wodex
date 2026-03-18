@@ -1,0 +1,747 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Wodex</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4efe6;
+      --panel: rgba(255, 252, 246, 0.92);
+      --panel-strong: #fffaf1;
+      --panel-soft: rgba(239, 232, 218, 0.76);
+      --ink: #1f1b16;
+      --muted: #6f6659;
+      --line: rgba(31, 27, 22, 0.1);
+      --accent: #c4532d;
+      --accent-soft: rgba(196, 83, 45, 0.12);
+      --accent-deep: #1b6256;
+      --accent-deep-soft: rgba(27, 98, 86, 0.1);
+      --shadow: 0 24px 60px rgba(31, 27, 22, 0.1);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Georgia, "Times New Roman", serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(196, 83, 45, 0.16), transparent 28%),
+        radial-gradient(circle at bottom right, rgba(27, 98, 86, 0.16), transparent 30%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.2), transparent 40%),
+        var(--bg);
+    }
+
+    .shell {
+      width: min(1320px, calc(100vw - 24px));
+      min-height: calc(100vh - 24px);
+      margin: 12px auto;
+      display: grid;
+      grid-template-columns: 320px minmax(0, 1fr);
+      background: rgba(255, 252, 246, 0.84);
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(12px);
+      overflow: hidden;
+    }
+
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      border-right: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(255, 250, 241, 0.96), rgba(239, 232, 218, 0.88));
+    }
+
+    .sidebar-top {
+      padding: 20px 18px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .workspace {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 0;
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      align-items: flex-start;
+      padding: 20px 24px 16px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.88), rgba(244, 239, 230, 0.94));
+    }
+
+    .brand,
+    .title-row {
+      display: flex;
+      gap: 12px;
+      align-items: baseline;
+      flex-wrap: wrap;
+    }
+
+    h1,
+    h2 {
+      margin: 0;
+      line-height: 1;
+      letter-spacing: -0.04em;
+    }
+
+    h1 {
+      font-size: clamp(2rem, 3.4vw, 2.8rem);
+    }
+
+    h2 {
+      font-size: clamp(1.4rem, 2.6vw, 2.2rem);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: rgba(27, 98, 86, 0.1);
+      color: var(--accent-deep);
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .badge.alt {
+      background: rgba(196, 83, 45, 0.12);
+      color: var(--accent);
+    }
+
+    .meta,
+    .hint,
+    .status {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .meta {
+      font-size: 0.96rem;
+    }
+
+    .hint {
+      font-size: 0.9rem;
+    }
+
+    .status {
+      min-height: 1.4rem;
+      padding: 10px 24px 0;
+      font-size: 0.95rem;
+    }
+
+    .sidebar-actions,
+    .composer-actions,
+    .header-side {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .header-side {
+      justify-content: flex-end;
+      text-align: right;
+    }
+
+    .thread-list {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .thread-empty,
+    .chat-empty {
+      padding: 18px;
+      border-radius: 18px;
+      border: 1px dashed var(--line);
+      background: rgba(255, 255, 255, 0.45);
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .thread-card {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: rgba(255, 255, 255, 0.54);
+      padding: 14px 14px 12px;
+      text-align: left;
+      cursor: pointer;
+      transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+    }
+
+    .thread-card:hover {
+      transform: translateY(-1px);
+      border-color: rgba(196, 83, 45, 0.25);
+      background: rgba(255, 255, 255, 0.78);
+    }
+
+    .thread-card.active {
+      border-color: rgba(196, 83, 45, 0.35);
+      background: linear-gradient(180deg, rgba(196, 83, 45, 0.14), rgba(255, 255, 255, 0.92));
+      box-shadow: inset 0 0 0 1px rgba(196, 83, 45, 0.08);
+    }
+
+    .thread-card-title {
+      margin: 0 0 6px;
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--ink);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .thread-card-preview {
+      margin: 0 0 10px;
+      color: var(--muted);
+      font-size: 0.92rem;
+      line-height: 1.4;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .thread-card-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+
+    .chat {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 20px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .message {
+      max-width: min(82%, 780px);
+      padding: 14px 16px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      line-height: 1.5;
+      white-space: pre-wrap;
+      font-size: 1rem;
+    }
+
+    .message.user {
+      align-self: flex-end;
+      background: var(--accent-soft);
+      border-color: rgba(196, 83, 45, 0.18);
+    }
+
+    .message.assistant {
+      align-self: flex-start;
+      background: var(--accent-deep-soft);
+      border-color: rgba(27, 98, 86, 0.18);
+    }
+
+    .composer {
+      padding: 18px 24px 24px;
+      border-top: 1px solid var(--line);
+      background: rgba(255, 252, 246, 0.96);
+    }
+
+    .composer form {
+      display: grid;
+      gap: 12px;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 112px;
+      resize: vertical;
+      padding: 14px 16px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: var(--panel-strong);
+      color: var(--ink);
+      font: inherit;
+      line-height: 1.5;
+    }
+
+    textarea:focus {
+      outline: 2px solid rgba(196, 83, 45, 0.24);
+      border-color: rgba(196, 83, 45, 0.4);
+    }
+
+    button {
+      border: 0;
+      border-radius: 999px;
+      padding: 10px 15px;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    .primary {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .secondary {
+      background: var(--panel-soft);
+      color: var(--ink);
+    }
+
+    .ghost {
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid var(--line);
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: wait;
+    }
+
+    code {
+      font-size: 0.92em;
+    }
+
+    @media (max-width: 940px) {
+      .shell {
+        grid-template-columns: 1fr;
+        width: calc(100vw - 16px);
+        min-height: calc(100vh - 16px);
+        margin: 8px auto;
+      }
+
+      .sidebar {
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+        max-height: 38vh;
+      }
+
+      .topbar {
+        flex-direction: column;
+      }
+
+      .header-side {
+        text-align: left;
+        justify-content: flex-start;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .message {
+        max-width: 100%;
+      }
+
+      .composer-actions,
+      .sidebar-actions {
+        align-items: stretch;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <aside class="sidebar">
+      <div class="sidebar-top">
+        <div class="brand">
+          <h1>Wodex</h1>
+          <span class="badge">thread browser</span>
+        </div>
+        <p class="meta">Browse local Codex sessions and continue any thread from this window.</p>
+        <p class="meta">New threads start in <code id="default-cwd">{{ default_cwd }}</code>.</p>
+        <div class="sidebar-actions" style="margin-top: 14px;">
+          <button type="button" class="secondary" id="new-thread-button">New Chat</button>
+          <button type="button" class="ghost" id="refresh-threads-button">Refresh</button>
+        </div>
+      </div>
+      <div id="thread-list" class="thread-list" aria-label="Available threads"></div>
+    </aside>
+
+    <section class="workspace">
+      <header class="topbar">
+        <div>
+          <div class="title-row">
+            <h2 id="thread-title">Choose a thread</h2>
+            <span class="badge alt" id="thread-source">local codex</span>
+          </div>
+          <p class="meta" id="thread-meta">Select a thread from the left, or start a fresh one here.</p>
+        </div>
+        <div class="header-side">
+          <p class="hint" id="thread-detail">No thread selected.</p>
+        </div>
+      </header>
+
+      <div id="status" class="status"></div>
+      <section id="chat" class="chat" aria-live="polite"></section>
+
+      <section class="composer">
+        <form id="chat-form">
+          <label for="prompt" class="hint">Prompt</label>
+          <textarea id="prompt" name="prompt" placeholder="Ask Codex something..."></textarea>
+          <div class="composer-actions">
+            <div class="hint" id="composer-hint">Sending with no selected thread creates a new conversation.</div>
+            <button type="submit" class="primary" id="send-button">Send</button>
+          </div>
+        </form>
+      </section>
+    </section>
+  </main>
+
+  <script>
+    const ACTIVE_THREAD_KEY = "wodex.activeThreadId";
+
+    const defaultCwdEl = document.getElementById("default-cwd");
+    const threadListEl = document.getElementById("thread-list");
+    const threadTitleEl = document.getElementById("thread-title");
+    const threadMetaEl = document.getElementById("thread-meta");
+    const threadSourceEl = document.getElementById("thread-source");
+    const threadDetailEl = document.getElementById("thread-detail");
+    const chatEl = document.getElementById("chat");
+    const statusEl = document.getElementById("status");
+    const formEl = document.getElementById("chat-form");
+    const promptEl = document.getElementById("prompt");
+    const sendButtonEl = document.getElementById("send-button");
+    const newThreadButtonEl = document.getElementById("new-thread-button");
+    const refreshThreadsButtonEl = document.getElementById("refresh-threads-button");
+    const composerHintEl = document.getElementById("composer-hint");
+
+    let threads = [];
+    let activeThreadId = sessionStorage.getItem(ACTIVE_THREAD_KEY) || null;
+    let activeThread = null;
+    let activeMessages = [];
+    let defaultCwd = defaultCwdEl.textContent;
+    let isSubmitting = false;
+
+    function setStatus(text, isError = false) {
+      statusEl.textContent = text;
+      statusEl.style.color = isError ? "var(--accent)" : "var(--muted)";
+    }
+
+    function setBusy(nextBusy) {
+      isSubmitting = nextBusy;
+      sendButtonEl.disabled = nextBusy;
+      newThreadButtonEl.disabled = nextBusy;
+      refreshThreadsButtonEl.disabled = nextBusy;
+      promptEl.disabled = nextBusy;
+    }
+
+    function setActiveThreadId(threadId) {
+      activeThreadId = threadId || null;
+      if (activeThreadId) {
+        sessionStorage.setItem(ACTIVE_THREAD_KEY, activeThreadId);
+      } else {
+        sessionStorage.removeItem(ACTIVE_THREAD_KEY);
+      }
+    }
+
+    function formatTimestamp(timestampSeconds) {
+      if (!timestampSeconds) {
+        return "Unknown time";
+      }
+      return new Date(timestampSeconds * 1000).toLocaleString();
+    }
+
+    function clearMainPane(message) {
+      activeThread = null;
+      activeMessages = [];
+      threadTitleEl.textContent = "New Chat";
+      threadSourceEl.textContent = "draft";
+      threadMetaEl.textContent = `Send a message to start a new Codex thread in ${defaultCwd}.`;
+      threadDetailEl.textContent = "No thread selected yet.";
+      composerHintEl.textContent = "Sending with no selected thread creates a new conversation.";
+      chatEl.innerHTML = "";
+
+      const empty = document.createElement("div");
+      empty.className = "chat-empty";
+      empty.textContent = message || "Select a thread from the left, or start writing to create a new one.";
+      chatEl.appendChild(empty);
+    }
+
+    function renderMessages(messages) {
+      chatEl.innerHTML = "";
+      if (!messages.length) {
+        const empty = document.createElement("div");
+        empty.className = "chat-empty";
+        empty.textContent = "This thread has no rendered messages yet.";
+        chatEl.appendChild(empty);
+        return;
+      }
+
+      for (const message of messages) {
+        const article = document.createElement("article");
+        article.className = `message ${message.role}`;
+        article.textContent = message.text;
+        chatEl.appendChild(article);
+      }
+
+      chatEl.scrollTop = chatEl.scrollHeight;
+    }
+
+    function renderThreadList() {
+      threadListEl.innerHTML = "";
+
+      if (!threads.length) {
+        const empty = document.createElement("div");
+        empty.className = "thread-empty";
+        empty.textContent = "No stored threads were found yet.";
+        threadListEl.appendChild(empty);
+        return;
+      }
+
+      for (const thread of threads) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = `thread-card${thread.id === activeThreadId ? " active" : ""}`;
+        button.dataset.threadId = thread.id;
+
+        const title = document.createElement("p");
+        title.className = "thread-card-title";
+        title.textContent = thread.title;
+        button.appendChild(title);
+
+        const preview = document.createElement("p");
+        preview.className = "thread-card-preview";
+        preview.textContent = thread.preview || "No preview available.";
+        button.appendChild(preview);
+
+        const meta = document.createElement("div");
+        meta.className = "thread-card-meta";
+
+        const source = document.createElement("span");
+        source.textContent = thread.source || "unknown";
+        meta.appendChild(source);
+
+        const updated = document.createElement("span");
+        updated.textContent = formatTimestamp(thread.updatedAt);
+        meta.appendChild(updated);
+
+        button.appendChild(meta);
+        threadListEl.appendChild(button);
+      }
+    }
+
+    function renderActiveThread() {
+      if (!activeThread) {
+        clearMainPane();
+        return;
+      }
+
+      threadTitleEl.textContent = activeThread.title;
+      threadSourceEl.textContent = activeThread.source || "unknown";
+      threadMetaEl.textContent = activeThread.preview || "No preview available.";
+      threadDetailEl.textContent = `Updated ${formatTimestamp(activeThread.updatedAt)} · ${activeThread.id}`;
+      composerHintEl.textContent = `Replying in thread ${activeThread.id}.`;
+      renderMessages(activeMessages);
+    }
+
+    async function fetchThreads() {
+      const response = await fetch("/api/threads");
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || `Thread list failed with ${response.status}`);
+      }
+      return payload;
+    }
+
+    async function fetchThread(threadId) {
+      const response = await fetch(`/api/threads/${encodeURIComponent(threadId)}`);
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || `Thread read failed with ${response.status}`);
+      }
+      return payload;
+    }
+
+    async function sendMessage(message) {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message,
+          threadId: activeThreadId,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || `Chat failed with ${response.status}`);
+      }
+      return payload;
+    }
+
+    async function refreshThreadList({ selectDefault = false } = {}) {
+      const payload = await fetchThreads();
+      defaultCwd = payload.cwd || defaultCwd;
+      defaultCwdEl.textContent = defaultCwd;
+      threads = payload.threads || [];
+
+      if (activeThreadId && !threads.some((thread) => thread.id === activeThreadId)) {
+        setActiveThreadId(null);
+      }
+
+      if (!activeThreadId && selectDefault && threads.length) {
+        setActiveThreadId(threads[0].id);
+      }
+
+      renderThreadList();
+    }
+
+    async function selectThread(threadId) {
+      if (!threadId) {
+        setActiveThreadId(null);
+        clearMainPane();
+        renderThreadList();
+        return;
+      }
+
+      setStatus("Loading thread...");
+      const payload = await fetchThread(threadId);
+      setActiveThreadId(threadId);
+      activeThread = payload.thread;
+      activeMessages = payload.messages || [];
+      renderThreadList();
+      renderActiveThread();
+      setStatus("Ready.");
+    }
+
+    function startDraft() {
+      setActiveThreadId(null);
+      clearMainPane("Fresh draft. Sending a message here will create a new Codex thread.");
+      renderThreadList();
+      promptEl.focus();
+      setStatus("Ready.");
+    }
+
+    async function initialize() {
+      setStatus("Loading threads...");
+      await refreshThreadList({ selectDefault: true });
+
+      if (activeThreadId) {
+        try {
+          await selectThread(activeThreadId);
+        } catch (error) {
+          setActiveThreadId(null);
+          clearMainPane("The previously selected thread could not be loaded.");
+          renderThreadList();
+          setStatus(error.message || "Failed to load thread.", true);
+          return;
+        }
+      } else {
+        clearMainPane();
+      }
+
+      setStatus("Ready.");
+    }
+
+    threadListEl.addEventListener("click", async (event) => {
+      const button = event.target.closest("[data-thread-id]");
+      if (!button || isSubmitting) {
+        return;
+      }
+
+      try {
+        await selectThread(button.dataset.threadId);
+      } catch (error) {
+        setStatus(error.message || "Failed to load thread.", true);
+      }
+    });
+
+    formEl.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (isSubmitting) {
+        return;
+      }
+
+      const message = promptEl.value.trim();
+      if (!message) {
+        setStatus("Enter a prompt first.", true);
+        return;
+      }
+
+      const optimisticMessages = [...activeMessages, { role: "user", text: message }, { role: "assistant", text: "Thinking..." }];
+      renderMessages(optimisticMessages);
+      setBusy(true);
+      setStatus("Waiting for Codex...");
+
+      try {
+        const payload = await sendMessage(message);
+        setActiveThreadId(payload.threadId);
+        activeThread = payload.thread;
+        activeMessages = payload.messages || [];
+        promptEl.value = "";
+        await refreshThreadList();
+        renderActiveThread();
+        promptEl.focus();
+        setStatus("Reply received.");
+      } catch (error) {
+        try {
+          await refreshThreadList();
+          if (activeThreadId) {
+            await selectThread(activeThreadId);
+          } else {
+            clearMainPane();
+          }
+        } catch (_) {
+        }
+        setStatus(error.message || "Request failed.", true);
+      } finally {
+        setBusy(false);
+      }
+    });
+
+    newThreadButtonEl.addEventListener("click", () => {
+      if (isSubmitting) {
+        return;
+      }
+      startDraft();
+    });
+
+    refreshThreadsButtonEl.addEventListener("click", async () => {
+      if (isSubmitting) {
+        return;
+      }
+
+      setBusy(true);
+      setStatus("Refreshing threads...");
+      try {
+        await refreshThreadList();
+        if (activeThreadId) {
+          await selectThread(activeThreadId);
+        } else {
+          clearMainPane();
+          setStatus("Thread list refreshed.");
+        }
+      } catch (error) {
+        setStatus(error.message || "Refresh failed.", true);
+      } finally {
+        setBusy(false);
+      }
+    });
+
+    initialize().catch((error) => {
+      clearMainPane("Wodex could not load the thread list.");
+      setStatus(error.message || "Initialization failed.", true);
+    });
+  </script>
+</body>
+</html>
