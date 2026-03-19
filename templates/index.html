@@ -4,6 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Wodex</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/katex/katex.min.css') }}">
+  <script src="{{ url_for('static', filename='vendor/commonmark/commonmark.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/wodex_markdown.js') }}"></script>
+  <script defer src="{{ url_for('static', filename='vendor/katex/katex.min.js') }}"></script>
+  <script defer src="{{ url_for('static', filename='vendor/katex/contrib/auto-render.min.js') }}" onload="window.dispatchEvent(new Event('wodex:math-ready'))"></script>
   <style>
     @font-face {
       font-family: {{ ui_fonts.family | tojson }};
@@ -131,9 +136,23 @@
       display: flex;
       align-items: stretch;
       height: var(--header-height);
-      padding: 18px 24px 14px;
+      padding: 18px 24px 0;
       border-bottom: 1px solid var(--line);
       background: linear-gradient(135deg, rgba(255, 255, 255, 0.88), rgba(244, 239, 230, 0.94));
+    }
+
+    .topbar-main {
+      width: 100%;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 24px;
+      min-width: 0;
+    }
+
+    .thread-heading {
+      min-width: 0;
+      padding-bottom: 14px;
     }
 
     .sidebar-headline,
@@ -333,6 +352,10 @@
       color: var(--chat-fg);
     }
 
+    .chat[hidden] {
+      display: none;
+    }
+
     .chat.chat-bottom::before {
       content: "";
       flex: 1 0 auto;
@@ -360,6 +383,196 @@
 
     .message.assistant.assistant-even {
       background: var(--assistant-bg-even);
+    }
+
+    .message.plan {
+      background: rgba(31, 27, 22, 0.06);
+      color: var(--muted);
+    }
+
+    .message.reasoning {
+      background: rgba(31, 27, 22, 0.09);
+      color: var(--chat-fg);
+    }
+
+    .message.command {
+      background: rgba(27, 98, 86, 0.12);
+      color: var(--chat-fg);
+    }
+
+    .message.structured-item {
+      background: rgba(31, 27, 22, 0.07);
+      color: var(--chat-fg);
+    }
+
+    .message-markdown {
+      line-height: 1.6;
+      word-break: break-word;
+      white-space: normal;
+    }
+
+    .message-markdown > *:first-child {
+      margin-top: 0;
+    }
+
+    .message-markdown > *:last-child {
+      margin-bottom: 0;
+    }
+
+    .message-markdown p {
+      margin: 0 0 0.9em;
+    }
+
+    .message-markdown h1,
+    .message-markdown h2,
+    .message-markdown h3,
+    .message-markdown h4,
+    .message-markdown h5,
+    .message-markdown h6 {
+      margin: 1.1em 0 0.55em;
+      line-height: 1.25;
+    }
+
+    .message-markdown h1 {
+      font-size: 1.45rem;
+    }
+
+    .message-markdown h2 {
+      font-size: 1.28rem;
+    }
+
+    .message-markdown h3 {
+      font-size: 1.14rem;
+    }
+
+    .message-markdown ul,
+    .message-markdown ol {
+      margin: 0 0 0.9em;
+      padding-left: 1.5em;
+    }
+
+    .message-markdown li + li {
+      margin-top: 0.22em;
+    }
+
+    .message-markdown blockquote {
+      margin: 0 0 0.9em;
+      padding: 0.1em 0 0.1em 1em;
+      border-left: 3px solid rgba(31, 27, 22, 0.2);
+      color: var(--muted);
+    }
+
+    .message-markdown hr {
+      margin: 1em 0;
+      border: 0;
+      border-top: 1px solid var(--line);
+    }
+
+    .message-markdown pre {
+      margin: 0 0 0.9em;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.38);
+      color: var(--chat-fg);
+      white-space: pre-wrap;
+      overflow-x: auto;
+      font: inherit;
+      line-height: 1.45;
+    }
+
+    .message-markdown code {
+      padding: 0.08em 0.3em;
+      border-radius: 4px;
+      background: rgba(31, 27, 22, 0.08);
+      font: inherit;
+    }
+
+    .message-markdown pre code {
+      padding: 0;
+      border-radius: 0;
+      background: transparent;
+    }
+
+    .message-markdown a {
+      color: var(--accent);
+      text-decoration-thickness: 1px;
+      text-underline-offset: 0.12em;
+    }
+
+    .message-markdown .katex {
+      font-size: 1.04em;
+    }
+
+    .message-markdown .katex-display {
+      margin: 0.9em 0;
+      overflow-x: auto;
+      overflow-y: hidden;
+      padding: 0.12em 0;
+    }
+
+    .message-markdown-math {
+      margin: 0 0 0.9em;
+    }
+
+    .message-label {
+      margin: 0 0 6px;
+      font-size: 0.84rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: rgba(31, 27, 22, 0.68);
+    }
+
+    .message-title {
+      font-weight: 700;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .message-meta {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 0.84rem;
+      line-height: 1.45;
+    }
+
+    .message-body {
+      margin: 10px 0 0;
+    }
+
+    .message-body-code {
+      margin: 10px 0 0;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.38);
+      color: var(--chat-fg);
+      white-space: pre-wrap;
+      overflow-x: auto;
+      font: inherit;
+    }
+
+    .message-command-line {
+      font-weight: 700;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .message-command-meta {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 0.84rem;
+      line-height: 1.45;
+    }
+
+    .message-command-output {
+      margin: 10px 0 0;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.38);
+      color: var(--chat-fg);
+      white-space: pre-wrap;
+      overflow-x: auto;
+      font: inherit;
     }
 
     .message.thinking {
@@ -424,6 +637,11 @@
       width: calc(100% + var(--sidebar-expanded-width));
     }
 
+    .shell.sessions-collapsed .sidebar {
+      border-right: 0;
+      background: transparent;
+    }
+
     .primary {
       background: var(--accent);
       color: #fff;
@@ -469,6 +687,11 @@
         min-height: var(--header-height);
       }
 
+      .topbar-main {
+        align-items: stretch;
+        flex-direction: column;
+      }
+
       .shell.sessions-collapsed .chat,
       .shell.sessions-collapsed .composer,
       .shell.sessions-collapsed .status {
@@ -510,11 +733,13 @@
 
     <section class="workspace">
       <header class="topbar">
-        <div>
-          <div class="title-row">
-            <h2 id="thread-title">Choose a thread</h2>
+        <div class="topbar-main">
+          <div class="thread-heading">
+            <div class="title-row">
+              <h2 id="thread-title">Choose a thread</h2>
+            </div>
+            <p class="meta" id="thread-meta">No thread selected yet.</p>
           </div>
-          <p class="meta" id="thread-meta">No thread selected yet.</p>
         </div>
       </header>
 
@@ -523,7 +748,7 @@
 
       <section class="composer">
         <form id="chat-form">
-          <textarea id="prompt" name="prompt" placeholder="Ask Codex something..." aria-label="Prompt"></textarea>
+          <textarea id="prompt" name="prompt" rows="1" placeholder="Ask Codex something..." aria-label="Prompt"></textarea>
         </form>
       </section>
     </section>
@@ -554,6 +779,7 @@
     const promptEl = document.getElementById("prompt");
     const newThreadButtonEl = document.getElementById("new-thread-button");
     const refreshThreadsButtonEl = document.getElementById("refresh-threads-button");
+    const markdownRenderer = window.WodexMarkdown.createRenderer({ commonmark: window.commonmark });
 
     let threads = [];
     let activeThreadId = sessionStorage.getItem(ACTIVE_THREAD_KEY) || null;
@@ -568,6 +794,12 @@
     let sessionsCollapsed = sessionStorage.getItem(SESSIONS_COLLAPSED_KEY) === "1";
     let windowId = sessionStorage.getItem(WINDOW_ID_KEY);
     let eventSource = null;
+    let transcriptRenderQueued = false;
+    let transcriptNodesByKey = new Map();
+    let promptResizeQueued = false;
+    let promptResizeNeedsLayout = false;
+    let promptMetrics = null;
+    let promptHeightPx = null;
     const ignoredClientMessageIds = new Set();
 
     if (!windowId) {
@@ -587,10 +819,7 @@
       statusEl.textContent = text;
       statusEl.hidden = !text;
       statusEl.style.color = isError ? "var(--accent)" : "var(--muted)";
-      requestAnimationFrame(() => {
-        resizePrompt();
-        updateChatLayout();
-      });
+      schedulePromptResize({ forceLayoutUpdate: true });
     }
 
     function setBusy(nextBusy) {
@@ -691,6 +920,17 @@
       return `${seconds}s`;
     }
 
+    function formatCommandDuration(durationMs) {
+      const value = Number(durationMs);
+      if (!Number.isFinite(value) || value < 0) {
+        return null;
+      }
+      if (value < 1000) {
+        return `${Math.round(value)}ms`;
+      }
+      return formatElapsedDuration(value);
+    }
+
     function formatThinkingLabel() {
       if (thinkingSinceMs === null) {
         return "Thinking...";
@@ -706,12 +946,162 @@
       return `${value.slice(0, maxLength)}...`;
     }
 
-    function normalizeMessages(messages) {
-      return (messages || []).map((message) => ({
+    function isMarkdownBlank(text) {
+      return !String(text || "").trim();
+    }
+
+    function renderMathInNode(element) {
+      markdownRenderer.renderMathInNode(element);
+    }
+
+    function renderMarkdown(text) {
+      return markdownRenderer.renderMessageHtml(text);
+    }
+
+    function normalizeMessage(message, { completed = true } = {}) {
+      return {
         role: message.role,
-        text: message.text,
-        completed: true,
-      }));
+        text: String(message.text || ""),
+        completed: Boolean(message.completed ?? completed),
+        itemId: message.itemId || null,
+        label: String(message.label || ""),
+        title: String(message.title || ""),
+        metaParts: Array.isArray(message.metaParts) ? message.metaParts.map((part) => String(part)) : [],
+        bodyIsCode: Boolean(message.bodyIsCode),
+        command: String(message.command || ""),
+        cwd: String(message.cwd || ""),
+        status: message.status || null,
+        exitCode: message.exitCode ?? null,
+        durationMs: message.durationMs ?? null,
+        processId: message.processId || null,
+        terminalInputCount: Number(message.terminalInputCount || 0),
+      };
+    }
+
+    function normalizeMessages(messages) {
+      return (messages || []).map((message) => normalizeMessage(message));
+    }
+
+    function shouldRenderMessage(message) {
+      if (!message) {
+        return false;
+      }
+      if (message.role === "command") {
+        return Boolean(message.command || message.text || message.status);
+      }
+      if (message.label) {
+        return Boolean(message.label || message.title || message.text || message.metaParts?.length);
+      }
+      return Boolean(message.text);
+    }
+
+    function messageMatchesAnchor(message, anchor) {
+      if (!anchor || !message || message.role !== anchor.role) {
+        return false;
+      }
+      if (message.role === "command") {
+        return (
+          (message.command || "") === (anchor.command || "") &&
+          (message.text || "") === (anchor.text || "") &&
+          (message.cwd || "") === (anchor.cwd || "") &&
+          (message.status || null) === (anchor.status || null)
+        );
+      }
+      if (message.label || anchor.label) {
+        return (
+          (message.label || "") === (anchor.label || "") &&
+          (message.title || "") === (anchor.title || "") &&
+          (message.text || "") === (anchor.text || "")
+        );
+      }
+      return (message.text || "") === (anchor.text || "");
+    }
+
+    function captureMessageAnchor(message) {
+      if (!message) {
+        return null;
+      }
+      return {
+        role: message.role,
+        text: message.text || "",
+        label: message.label || "",
+        title: message.title || "",
+        command: message.command || "",
+        cwd: message.cwd || "",
+        status: message.status || null,
+      };
+    }
+
+    function isEphemeralTranscriptItem(message) {
+      return Boolean(message?.itemId && message?.role !== "assistant" && message?.role !== "user");
+    }
+
+    function messagesEquivalent(left, right) {
+      return messageMatchesAnchor(left, captureMessageAnchor(right));
+    }
+
+    function captureEphemeralItems(messages) {
+      const capturedItems = [];
+      for (let index = 0; index < messages.length; index += 1) {
+        const message = messages[index];
+        if (!isEphemeralTranscriptItem(message) || !message.itemId || !shouldRenderMessage(message)) {
+          continue;
+        }
+
+        let previousAnchor = null;
+        for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+          const candidate = messages[cursor];
+          if (!shouldRenderMessage(candidate) || isEphemeralTranscriptItem(candidate)) {
+            continue;
+          }
+          previousAnchor = captureMessageAnchor(candidate);
+          break;
+        }
+
+        let nextAnchor = null;
+        for (let cursor = index + 1; cursor < messages.length; cursor += 1) {
+          const candidate = messages[cursor];
+          if (!shouldRenderMessage(candidate) || isEphemeralTranscriptItem(candidate)) {
+            continue;
+          }
+          nextAnchor = captureMessageAnchor(candidate);
+          break;
+        }
+
+        capturedItems.push({
+          ...normalizeMessage(message, { completed: true }),
+          previousAnchor,
+          nextAnchor,
+        });
+      }
+      return capturedItems;
+    }
+
+    function mergeEphemeralItems(messages, capturedItems) {
+      const mergedMessages = [...messages];
+      for (const item of capturedItems) {
+        if (mergedMessages.some((message) => messagesEquivalent(message, item))) {
+          continue;
+        }
+
+        let insertIndex = mergedMessages.length;
+        if (item.nextAnchor) {
+          const nextIndex = mergedMessages.findIndex((message) => messageMatchesAnchor(message, item.nextAnchor));
+          if (nextIndex >= 0) {
+            insertIndex = nextIndex;
+          }
+        } else if (item.previousAnchor) {
+          const previousIndex = mergedMessages.findLastIndex((message) => messageMatchesAnchor(message, item.previousAnchor));
+          if (previousIndex >= 0) {
+            insertIndex = previousIndex + 1;
+          }
+        }
+
+        mergedMessages.splice(insertIndex, 0, {
+          ...normalizeMessage(item, { completed: true }),
+        });
+      }
+      return mergedMessages;
     }
 
     function resetThinkingState() {
@@ -742,21 +1132,29 @@
       thinkingTimer = window.setInterval(updateThinkingIndicator, 1000);
     }
 
-    function resizePrompt() {
-      promptEl.style.height = "0px";
-
+    function refreshPromptMetrics() {
       const promptStyle = window.getComputedStyle(promptEl);
       const composerStyle = window.getComputedStyle(composerEl);
-      const lineHeight = parseFloat(promptStyle.lineHeight) || 24;
-      const promptVerticalChrome =
-        parseFloat(promptStyle.paddingTop) +
-        parseFloat(promptStyle.paddingBottom) +
-        parseFloat(promptStyle.borderTopWidth) +
-        parseFloat(promptStyle.borderBottomWidth);
-      const composerVerticalChrome =
-        parseFloat(composerStyle.paddingTop) +
-        parseFloat(composerStyle.paddingBottom) +
-        parseFloat(composerStyle.borderTopWidth);
+      promptMetrics = {
+        lineHeight: parseFloat(promptStyle.lineHeight) || 24,
+        promptVerticalChrome:
+          parseFloat(promptStyle.paddingTop) +
+          parseFloat(promptStyle.paddingBottom) +
+          parseFloat(promptStyle.borderTopWidth) +
+          parseFloat(promptStyle.borderBottomWidth),
+        composerVerticalChrome:
+          parseFloat(composerStyle.paddingTop) +
+          parseFloat(composerStyle.paddingBottom) +
+          parseFloat(composerStyle.borderTopWidth),
+      };
+    }
+
+    function resizePrompt({ forceLayoutUpdate = false } = {}) {
+      if (!promptMetrics) {
+        refreshPromptMetrics();
+      }
+
+      const { lineHeight, promptVerticalChrome, composerVerticalChrome } = promptMetrics;
       const minPromptHeight = lineHeight + promptVerticalChrome;
       const totalConversationHeight =
         workspaceEl.clientHeight -
@@ -764,14 +1162,45 @@
         (statusEl.hidden ? 0 : statusEl.offsetHeight);
       const maxComposerHeight = Math.max(minPromptHeight + composerVerticalChrome, totalConversationHeight / 2);
       const maxPromptHeight = Math.max(minPromptHeight, maxComposerHeight - composerVerticalChrome);
-      const nextHeight = Math.min(promptEl.scrollHeight, maxPromptHeight);
+      const previousHeight = promptHeightPx;
+      const previousOverflowY = promptEl.style.overflowY;
 
-      promptEl.style.height = `${Math.max(minPromptHeight, nextHeight)}px`;
-      promptEl.style.overflowY = promptEl.scrollHeight > maxPromptHeight ? "auto" : "hidden";
+      promptEl.style.height = "auto";
+      const nextHeight = Math.min(promptEl.scrollHeight, maxPromptHeight);
+      const appliedHeight = Math.max(minPromptHeight, nextHeight);
+      const nextOverflowY = promptEl.scrollHeight > maxPromptHeight ? "auto" : "hidden";
+
+      promptEl.style.height = `${appliedHeight}px`;
+      promptEl.style.overflowY = nextOverflowY;
+      promptHeightPx = appliedHeight;
+
+      const heightChanged = previousHeight === null || Math.abs(previousHeight - appliedHeight) > 0.5;
+      const overflowChanged = previousOverflowY !== nextOverflowY;
+      if (forceLayoutUpdate || heightChanged || overflowChanged) {
+        updateChatLayout();
+      }
+    }
+
+    function schedulePromptResize({ forceLayoutUpdate = false } = {}) {
+      promptResizeNeedsLayout = promptResizeNeedsLayout || forceLayoutUpdate;
+      if (promptResizeQueued) {
+        return;
+      }
+      promptResizeQueued = true;
+      window.requestAnimationFrame(() => {
+        promptResizeQueued = false;
+        const shouldUpdateLayout = promptResizeNeedsLayout;
+        promptResizeNeedsLayout = false;
+        resizePrompt({ forceLayoutUpdate: shouldUpdateLayout });
+      });
     }
 
     function updateChatLayout() {
-      const hasMessages = chatEl.querySelector(".message") !== null;
+      if (chatEl.hidden) {
+        return;
+      }
+      const firstChild = chatEl.firstElementChild;
+      const hasMessages = Boolean(firstChild) && !firstChild.classList.contains("chat-empty");
       const shouldBottomAlign = hasMessages && chatEl.scrollHeight <= chatEl.clientHeight + 1;
       chatEl.classList.toggle("chat-bottom", shouldBottomAlign);
     }
@@ -784,7 +1213,7 @@
       threadTitleEl.textContent = NEW_CHAT_TITLE;
       threadTitleEl.title = NEW_CHAT_TITLE;
       threadMetaEl.textContent = NO_THREAD_YET_LABEL;
-      renderTranscript();
+      renderActivePane();
     }
 
     function appendUserMessage(text, clientMessageId = null, afterCompletedOnly = false) {
@@ -813,10 +1242,11 @@
       displayMessages = displayMessages.filter((message) => message.clientMessageId !== clientMessageId);
     }
 
-    function upsertAssistantMessage(itemId, text, { completed = false } = {}) {
+    function upsertLiveMessage(itemId, role, text, { completed = false } = {}) {
       const nextText = String(text || "");
       const existingIndex = displayMessages.findIndex((message) => message.itemId === itemId);
       if (existingIndex >= 0) {
+        displayMessages[existingIndex].role = role;
         displayMessages[existingIndex].text = nextText;
         displayMessages[existingIndex].completed = completed;
         return;
@@ -825,25 +1255,21 @@
         return;
       }
       displayMessages.push({
-        role: "assistant",
+        role,
         text: nextText,
         itemId,
         completed,
       });
     }
 
-    function replaceLiveAssistantMessages(agentMessages) {
+    function replaceLiveItems(items) {
       displayMessages = displayMessages.filter((message) => !message.itemId);
-      for (const message of agentMessages || []) {
-        if (!message.text) {
+      for (const message of items || []) {
+        const normalized = normalizeMessage(message, { completed: Boolean(message.completed) });
+        if (!shouldRenderMessage(normalized)) {
           continue;
         }
-        displayMessages.push({
-          role: "assistant",
-          text: message.text,
-          itemId: message.itemId,
-          completed: Boolean(message.completed),
-        });
+        displayMessages.push(normalized);
       }
     }
 
@@ -851,12 +1277,11 @@
       const nextLive = live || {};
       activeTurnId = nextLive.activeTurnId || null;
       thinkingSinceMs = nextLive.thinkingSince ? nextLive.thinkingSince * 1000 : null;
-      replaceLiveAssistantMessages(nextLive.agentMessages || []);
+      replaceLiveItems(nextLive.items || []);
       syncThinkingTimer();
     }
 
-    function renderTranscript() {
-      chatEl.innerHTML = "";
+    function buildRenderMessages() {
       const renderMessages = [...displayMessages];
       if (activeTurnId) {
         renderMessages.push({
@@ -865,8 +1290,173 @@
           isThinking: true,
         });
       }
+      return renderMessages;
+    }
+
+    function messageKey(message, index) {
+      if (message.isThinking) {
+        return "__thinking__";
+      }
+      if (message.itemId) {
+        return `item:${message.itemId}`;
+      }
+      if (message.clientMessageId) {
+        return `client:${message.clientMessageId}`;
+      }
+      return `static:${index}:${message.role}`;
+    }
+
+    function messageFingerprint(message, assistantVariant) {
+      return JSON.stringify({
+        role: message.role,
+        text: message.text || "",
+        completed: Boolean(message.completed),
+        isThinking: Boolean(message.isThinking),
+        label: message.label || "",
+        title: message.title || "",
+        metaParts: message.metaParts || [],
+        bodyIsCode: Boolean(message.bodyIsCode),
+        command: message.command || "",
+        cwd: message.cwd || "",
+        status: message.status || null,
+        exitCode: message.exitCode ?? null,
+        durationMs: message.durationMs ?? null,
+        processId: message.processId || null,
+        terminalInputCount: Number(message.terminalInputCount || 0),
+        assistantVariant,
+      });
+    }
+
+    function renderMessageNode(article, message, assistantVariant) {
+      article.className = "message";
+      article.removeAttribute("id");
+      article.classList.add(message.role);
+      if (message.role === "assistant" && assistantVariant) {
+        article.classList.add(assistantVariant);
+      }
+
+      article.replaceChildren();
+
+      if (message.isThinking) {
+        article.classList.add("thinking");
+        article.id = "thinking-indicator";
+        article.textContent = formatThinkingLabel();
+        return;
+      }
+
+      if (message.role === "command") {
+        const label = document.createElement("div");
+        label.className = "message-label";
+        label.textContent = "Command";
+
+        const commandLine = document.createElement("div");
+        commandLine.className = "message-command-line";
+        commandLine.textContent = message.command || "(command unavailable)";
+
+        article.append(label, commandLine);
+
+        const metaParts = [];
+        if (message.cwd) {
+          metaParts.push(message.cwd);
+        }
+        if (message.status) {
+          metaParts.push(message.status);
+        }
+        if (message.exitCode !== null && message.exitCode !== undefined) {
+          metaParts.push(`exit ${message.exitCode}`);
+        }
+        const durationLabel = formatCommandDuration(message.durationMs);
+        if (durationLabel) {
+          metaParts.push(durationLabel);
+        }
+        if (message.terminalInputCount > 0) {
+          metaParts.push(`stdin x${message.terminalInputCount}`);
+        }
+
+        if (metaParts.length) {
+          const meta = document.createElement("div");
+          meta.className = "message-command-meta";
+          meta.textContent = metaParts.join(" | ");
+          article.appendChild(meta);
+        }
+
+        if (message.text) {
+          const output = document.createElement("pre");
+          output.className = "message-command-output";
+          output.textContent = message.text;
+          article.appendChild(output);
+        }
+        return;
+      }
+
+      if (message.label) {
+        article.classList.add("structured-item");
+
+        const label = document.createElement("div");
+        label.className = "message-label";
+        label.textContent = message.label;
+        article.appendChild(label);
+
+        if (message.title) {
+          const title = document.createElement("div");
+          title.className = "message-title";
+          title.textContent = message.title;
+          article.appendChild(title);
+        }
+
+        if (message.metaParts && message.metaParts.length) {
+          const meta = document.createElement("div");
+          meta.className = "message-meta";
+          meta.textContent = message.metaParts.join(" | ");
+          article.appendChild(meta);
+        }
+
+        if (message.text) {
+          const body = document.createElement(message.bodyIsCode ? "pre" : "div");
+          body.className = message.bodyIsCode ? "message-body-code" : "message-body";
+          body.textContent = message.text;
+          article.appendChild(body);
+        }
+        return;
+      }
+
+      if (message.role === "plan" || message.role === "reasoning") {
+        const label = document.createElement("div");
+        label.className = "message-label";
+        label.textContent = message.role === "plan" ? "Plan" : "Reasoning";
+        const body = document.createElement("div");
+        if (message.role === "reasoning") {
+          body.className = "message-markdown";
+          body.innerHTML = isMarkdownBlank(message.text) ? "" : renderMarkdown(message.text);
+          renderMathInNode(body);
+        } else {
+          body.textContent = message.text;
+        }
+        article.append(label, body);
+        return;
+      }
+
+      if (message.role === "assistant" || message.role === "user") {
+        const body = document.createElement("div");
+        body.className = "message-markdown";
+        body.innerHTML = isMarkdownBlank(message.text) ? "" : renderMarkdown(message.text);
+        renderMathInNode(body);
+        article.appendChild(body);
+        return;
+      }
+
+      article.textContent = message.text;
+    }
+
+    function renderTranscript() {
+      const renderMessages = buildRenderMessages();
+      const shouldStickToBottom =
+        Boolean(activeTurnId) ||
+        chatEl.scrollTop + chatEl.clientHeight >= chatEl.scrollHeight - 32;
 
       if (!renderMessages.length) {
+        transcriptNodesByKey = new Map();
+        chatEl.innerHTML = "";
         const empty = document.createElement("div");
         empty.className = "chat-empty";
         empty.textContent = emptyChatMessage;
@@ -875,27 +1465,67 @@
         return;
       }
 
-      let assistantCount = 0;
-      for (const message of renderMessages) {
-        const article = document.createElement("article");
-        article.classList.add("message", message.role);
-        if (message.role === "assistant") {
-          assistantCount += 1;
-          article.classList.add(assistantCount % 2 === 0 ? "assistant-even" : "assistant-odd");
-        }
-        if (message.isThinking) {
-          article.classList.add("thinking");
-          article.id = "thinking-indicator";
-          article.textContent = formatThinkingLabel();
-        } else {
-          article.textContent = message.text;
-        }
-        chatEl.appendChild(article);
+      const emptyNode = chatEl.querySelector(".chat-empty");
+      if (emptyNode) {
+        emptyNode.remove();
       }
 
+      const nextNodesByKey = new Map();
+      let assistantCount = 0;
+      let previousNode = null;
+
+      renderMessages.forEach((message, index) => {
+        const key = messageKey(message, index);
+        const article = transcriptNodesByKey.get(key) || document.createElement("article");
+        const assistantVariant = message.role === "assistant"
+          ? ((assistantCount += 1) % 2 === 0 ? "assistant-even" : "assistant-odd")
+          : "";
+        const fingerprint = messageFingerprint(message, assistantVariant);
+
+        if (article.dataset.fingerprint !== fingerprint) {
+          renderMessageNode(article, message, assistantVariant);
+          article.dataset.fingerprint = fingerprint;
+        }
+
+        nextNodesByKey.set(key, article);
+
+        if (previousNode === null) {
+          if (chatEl.firstChild !== article) {
+            chatEl.insertBefore(article, chatEl.firstChild);
+          }
+        } else if (article.previousSibling !== previousNode) {
+          chatEl.insertBefore(article, previousNode.nextSibling);
+        }
+        previousNode = article;
+      });
+
+      for (const [key, node] of transcriptNodesByKey.entries()) {
+        if (!nextNodesByKey.has(key)) {
+          node.remove();
+        }
+      }
+
+      transcriptNodesByKey = nextNodesByKey;
       updateChatLayout();
-      chatEl.scrollTop = chatEl.scrollHeight;
+      if (shouldStickToBottom) {
+        chatEl.scrollTop = chatEl.scrollHeight;
+      }
       updateThinkingIndicator();
+    }
+
+    function renderActivePane() {
+      renderTranscript();
+    }
+
+    function scheduleTranscriptRender() {
+      if (transcriptRenderQueued) {
+        return;
+      }
+      transcriptRenderQueued = true;
+      window.requestAnimationFrame(() => {
+        transcriptRenderQueued = false;
+        renderTranscript();
+      });
     }
 
     function renderThreadList() {
@@ -949,14 +1579,14 @@
         threadTitleEl.textContent = NEW_CHAT_TITLE;
         threadTitleEl.title = NEW_CHAT_TITLE;
         threadMetaEl.textContent = activeThreadId || NO_THREAD_YET_LABEL;
-        renderTranscript();
+        renderActivePane();
         return;
       }
 
       threadTitleEl.textContent = truncateTitle(activeThread.title);
       threadTitleEl.title = activeThread.title;
       threadMetaEl.textContent = activeThread.id || "No session id";
-      renderTranscript();
+      renderActivePane();
     }
 
     async function fetchThreads() {
@@ -1034,7 +1664,7 @@
       clearMainPane("Fresh draft. Sending a message here will create a new Codex thread.");
       renderThreadList();
       promptEl.focus();
-      resizePrompt();
+      schedulePromptResize({ forceLayoutUpdate: true });
       setStatus("");
     }
 
@@ -1044,12 +1674,13 @@
         return;
       }
 
+      const ephemeralItems = captureEphemeralItems(displayMessages);
       resetThinkingState();
       await refreshThreadList().catch(() => {});
       try {
         const payload = await fetchThread(eventPayload.threadId);
         activeThread = payload.thread;
-        displayMessages = normalizeMessages(payload.messages);
+        displayMessages = mergeEphemeralItems(normalizeMessages(payload.messages), ephemeralItems);
         emptyChatMessage = EMPTY_RENDERED_THREAD_MESSAGE;
         syncLiveState(payload.live);
         renderThreadList();
@@ -1082,7 +1713,7 @@
           }
           if (eventPayload.text) {
             appendUserMessage(eventPayload.text, null, Boolean(activeTurnId));
-            renderActiveThread();
+            scheduleTranscriptRender();
           }
           break;
 
@@ -1092,7 +1723,7 @@
             thinkingSinceMs = eventPayload.live.thinkingSince * 1000;
           }
           syncThinkingTimer();
-          renderActiveThread();
+          scheduleTranscriptRender();
           break;
 
         case "agent_message_started":
@@ -1103,10 +1734,10 @@
             thinkingSinceMs = eventPayload.live.thinkingSince * 1000;
           }
           if (eventPayload.text) {
-            upsertAssistantMessage(eventPayload.itemId, eventPayload.text, { completed: false });
+            upsertLiveMessage(eventPayload.itemId, "assistant", eventPayload.text, { completed: false });
           }
           syncThinkingTimer();
-          renderActiveThread();
+          scheduleTranscriptRender();
           break;
 
         case "agent_message_delta":
@@ -1116,18 +1747,84 @@
           if (eventPayload.resetThinkingTimer && eventPayload.live?.thinkingSince) {
             thinkingSinceMs = eventPayload.live.thinkingSince * 1000;
           }
-          upsertAssistantMessage(
+          upsertLiveMessage(
             eventPayload.itemId,
+            "assistant",
             eventPayload.text || eventPayload.delta || "",
             { completed: false },
           );
           syncThinkingTimer();
-          renderActiveThread();
+          scheduleTranscriptRender();
           break;
 
         case "agent_message_completed":
-          upsertAssistantMessage(eventPayload.itemId, eventPayload.text || "", { completed: true });
-          renderActiveThread();
+          upsertLiveMessage(eventPayload.itemId, "assistant", eventPayload.text || "", { completed: true });
+          scheduleTranscriptRender();
+          break;
+
+        case "plan_started":
+          syncLiveState(eventPayload.live);
+          scheduleTranscriptRender();
+          break;
+
+        case "plan_delta":
+          syncLiveState(eventPayload.live);
+          scheduleTranscriptRender();
+          break;
+
+        case "plan_completed":
+          syncLiveState(eventPayload.live);
+          scheduleTranscriptRender();
+          break;
+
+        case "turn_plan_updated":
+          syncLiveState(eventPayload.live);
+          scheduleTranscriptRender();
+          break;
+
+        case "reasoning_started":
+          syncLiveState(eventPayload.live);
+          scheduleTranscriptRender();
+          break;
+
+        case "reasoning_updated":
+          syncLiveState(eventPayload.live);
+          scheduleTranscriptRender();
+          break;
+
+        case "reasoning_completed":
+          syncLiveState(eventPayload.live);
+          scheduleTranscriptRender();
+          break;
+
+        case "command_execution_started":
+          syncLiveState(eventPayload.live);
+          scheduleTranscriptRender();
+          break;
+
+        case "command_execution_updated":
+          syncLiveState(eventPayload.live);
+          scheduleTranscriptRender();
+          break;
+
+        case "command_execution_completed":
+          syncLiveState(eventPayload.live);
+          scheduleTranscriptRender();
+          break;
+
+        case "structured_item_started":
+          syncLiveState(eventPayload.live);
+          scheduleTranscriptRender();
+          break;
+
+        case "structured_item_updated":
+          syncLiveState(eventPayload.live);
+          scheduleTranscriptRender();
+          break;
+
+        case "structured_item_completed":
+          syncLiveState(eventPayload.live);
+          scheduleTranscriptRender();
           break;
 
         case "turn_error":
@@ -1186,7 +1883,8 @@
         clearMainPane();
       }
 
-      resizePrompt();
+      refreshPromptMetrics();
+      schedulePromptResize({ forceLayoutUpdate: true });
       setStatus("");
     }
 
@@ -1220,7 +1918,7 @@
       ignoredClientMessageIds.add(clientMessageId);
 
       promptEl.value = "";
-      resizePrompt();
+      schedulePromptResize();
       appendUserMessage(message, clientMessageId, hadActiveTurn);
       if (!hadActiveTurn) {
         thinkingSinceMs = Date.now();
@@ -1260,7 +1958,7 @@
           syncThinkingTimer();
         }
         promptEl.value = message;
-        resizePrompt();
+        schedulePromptResize();
         renderActiveThread();
         setStatus(error.message || "Request failed.", true);
       } finally {
@@ -1280,8 +1978,7 @@
     });
 
     promptEl.addEventListener("input", () => {
-      resizePrompt();
-      updateChatLayout();
+      schedulePromptResize();
     });
 
     sessionsToggleEl.addEventListener("click", () => {
@@ -1337,9 +2034,20 @@
     });
 
     window.addEventListener("resize", () => {
-      resizePrompt();
-      updateChatLayout();
+      refreshPromptMetrics();
+      schedulePromptResize({ forceLayoutUpdate: true });
     });
+
+    window.addEventListener("wodex:math-ready", () => {
+      renderActivePane();
+    });
+
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(() => {
+        refreshPromptMetrics();
+        schedulePromptResize({ forceLayoutUpdate: true });
+      }).catch(() => {});
+    }
 
     initialize().catch((error) => {
       clearMainPane("Wodex could not load the thread list.");

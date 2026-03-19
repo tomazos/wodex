@@ -7,6 +7,7 @@
     "server",
     "codex",
     "windows",
+    "logging",
     "ui"
   ],
   "properties": {
@@ -75,6 +76,19 @@
         "shutdownGraceSeconds": {
           "type": "number",
           "minimum": 0
+        }
+      }
+    },
+    "logging": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "directory"
+      ],
+      "properties": {
+        "directory": {
+          "type": "string",
+          "minLength": 1
         }
       }
     },

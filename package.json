@@ -1,0 +1,12 @@
+{
+  "name": "wodex",
+  "private": true,
+  "version": "0.1.2",
+  "scripts": {
+    "test:commonmark": "node scripts/run_commonmark_spec_tests.mjs"
+  },
+  "devDependencies": {
+    "commonmark": "0.31.2",
+    "commonmark-spec": "0.31.2"
+  }
+}

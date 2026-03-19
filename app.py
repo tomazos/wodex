@@ -1,20 +1,24 @@
 import atexit
 import json
+import os
 import queue
 import subprocess
 import sys
 import threading
 import time
+from copy import deepcopy
+from datetime import datetime
 from itertools import count
 from pathlib import Path
 from typing import Callable
 from typing import Any
 from typing import Iterator
+from uuid import uuid4
 
 from flask import Flask, Response, abort, jsonify, render_template, request, send_file, stream_with_context
 from waitress import serve
 
-from wodex_config import WodexConfigError, load_wodex_config, resolve_config_path
+from wodex_config import CONFIG_DIR, WodexConfigError, load_wodex_config, resolve_config_path
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 APP_CONFIG: dict[str, Any] | None = None
@@ -26,6 +30,49 @@ class JsonRpcError(RuntimeError):
         super().__init__(message)
         self.code = code
         self.message = message
+
+
+class RpcTrafficLogger:
+    def __init__(self, root_directory: Path) -> None:
+        self._lock = threading.Lock()
+        now = datetime.now()
+        dated_directory = root_directory / now.strftime("%Y") / now.strftime("%m") / now.strftime("%d")
+        dated_directory.mkdir(parents=True, exist_ok=True)
+
+        filename = f"codex-{now.strftime('%Y%m%d%H%M')}_{uuid4()}.log"
+        self.path = dated_directory / filename
+        self._handle = self.path.open("a", encoding="utf-8")
+
+        latest_link = CONFIG_DIR / "codex-latest.log"
+        latest_link.parent.mkdir(parents=True, exist_ok=True)
+        temp_link = latest_link.with_name(f".{latest_link.name}.{uuid4().hex}.tmp")
+        try:
+            if temp_link.exists() or temp_link.is_symlink():
+                temp_link.unlink()
+            temp_link.symlink_to(self.path)
+            os.replace(temp_link, latest_link)
+        finally:
+            if temp_link.exists() or temp_link.is_symlink():
+                temp_link.unlink(missing_ok=True)
+
+    def write(self, origin: str, message: dict[str, Any]) -> None:
+        with self._lock:
+            if self._handle.closed:
+                return
+            entry = [
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                origin,
+                message,
+            ]
+            line = json.dumps(entry, ensure_ascii=True)
+            self._handle.write(line + "\n")
+            self._handle.flush()
+
+    def close(self) -> None:
+        with self._lock:
+            if self._handle.closed:
+                return
+            self._handle.close()
 
 
 class BrowserWindowRegistry:
@@ -147,6 +194,7 @@ class CodexAppServerClient:
         self,
         default_cwd: str,
         thread_list_limit: int,
+        rpc_log_directory: Path,
     ) -> None:
         self.default_cwd = default_cwd
         self.thread_list_limit = thread_list_limit
@@ -159,6 +207,8 @@ class CodexAppServerClient:
         self._event_hub = EventStreamHub()
         self._live_state_lock = threading.Lock()
         self._live_threads: dict[str, dict[str, Any]] = {}
+        self._synthetic_item_counter = count(1)
+        self._rpc_logger = RpcTrafficLogger(rpc_log_directory)
 
         self._process = subprocess.Popen(
             ["codex", "app-server"],
@@ -186,12 +236,17 @@ class CodexAppServerClient:
 
     def close(self) -> None:
         if self._process.poll() is not None:
+            self._rpc_logger.close()
             return
         self._process.terminate()
         try:
             self._process.wait(timeout=5)
         except subprocess.TimeoutExpired:
             self._process.kill()
+            self._process.wait(timeout=5)
+        self._stdout_thread.join(timeout=2)
+        self._stderr_thread.join(timeout=2)
+        self._rpc_logger.close()
 
     def ensure_thread(self, thread_id: str | None) -> str:
         if thread_id:
@@ -250,8 +305,8 @@ class CodexAppServerClient:
         )
         return result["thread"]
 
-    def thread_messages(self, thread: dict[str, Any]) -> list[dict[str, str]]:
-        messages: list[dict[str, str]] = []
+    def thread_messages(self, thread: dict[str, Any]) -> list[dict[str, Any]]:
+        messages: list[dict[str, Any]] = []
         for turn in thread.get("turns", []):
             for item in turn.get("items", []):
                 item_type = item.get("type")
@@ -268,6 +323,38 @@ class CodexAppServerClient:
                     text = item.get("text", "").strip()
                     if text:
                         messages.append({"role": "assistant", "text": text})
+                elif item_type == "plan":
+                    text = item.get("text", "").strip()
+                    if text:
+                        messages.append({"role": "plan", "text": text})
+                elif item_type == "reasoning":
+                    text = self._format_reasoning_text(
+                        item.get("summary", []),
+                        item.get("content", []),
+                    )
+                    if text:
+                        messages.append({"role": "reasoning", "text": text})
+                elif item_type == "commandExecution":
+                    message = self._command_message_payload(
+                        command=item.get("command"),
+                        cwd=item.get("cwd"),
+                        status=item.get("status"),
+                        output=item.get("aggregatedOutput"),
+                        exit_code=item.get("exitCode"),
+                        duration_ms=item.get("durationMs"),
+                        process_id=item.get("processId"),
+                    )
+                    if message["command"] or message["text"] or message["status"]:
+                        messages.append(message)
+                else:
+                    message = self._structured_item_message_payload(
+                        item_type,
+                        item,
+                        completed=True,
+                        item_id=item.get("id"),
+                    )
+                    if message is not None:
+                        messages.append(message)
         return messages
 
     def subscribe_events(self) -> tuple[int, queue.Queue[dict[str, Any]]]:
@@ -283,7 +370,7 @@ class CodexAppServerClient:
                 return {
                     "activeTurnId": None,
                     "thinkingSince": None,
-                    "agentMessages": [],
+                    "items": [],
                 }
             return self._serialize_live_state_locked(state)
 
@@ -367,21 +454,51 @@ class CodexAppServerClient:
             state = {
                 "activeTurnId": None,
                 "thinkingSince": None,
-                "agentOrder": [],
-                "agentItems": {},
+                "itemOrder": [],
+                "items": {},
             }
             self._live_threads[thread_id] = state
         return state
 
     def _serialize_live_state_locked(self, state: dict[str, Any]) -> dict[str, Any]:
-        agent_messages = []
-        for item_id in state["agentOrder"]:
-            item = state["agentItems"].get(item_id)
+        items = []
+        for item_id in state["itemOrder"]:
+            item = state["items"].get(item_id)
             if item is None or not item.get("visible"):
                 continue
-            agent_messages.append(
+            item_type = item.get("type")
+            if item_type == "commandExecution":
+                items.append(
+                    self._command_message_payload(
+                        command=item.get("command"),
+                        cwd=item.get("cwd"),
+                        status=item.get("status"),
+                        output=item.get("text"),
+                        exit_code=item.get("exitCode"),
+                        duration_ms=item.get("durationMs"),
+                        process_id=item.get("processId"),
+                        terminal_input_count=int(item.get("terminalInputCount", 0) or 0),
+                        completed=item.get("completed", False),
+                        item_id=item_id,
+                    )
+                )
+                continue
+            if item_type not in {"agentMessage", "reasoning", "plan"}:
+                payload = self._structured_live_item_message_payload(item_id, item)
+                if payload is not None:
+                    items.append(payload)
+                continue
+            if item_type == "agentMessage":
+                role = "assistant"
+            elif item_type == "reasoning":
+                role = "reasoning"
+            else:
+                role = "plan"
+            items.append(
                 {
                     "itemId": item_id,
+                    "type": item_type,
+                    "role": role,
                     "text": item.get("text", ""),
                     "phase": item.get("phase"),
                     "completed": item.get("completed", False),
@@ -390,7 +507,7 @@ class CodexAppServerClient:
         return {
             "activeTurnId": state.get("activeTurnId"),
             "thinkingSince": state.get("thinkingSince"),
-            "agentMessages": agent_messages,
+            "items": items,
         }
 
     def _mark_turn_started(self, thread_id: str, turn_id: str, publish_event: bool = True) -> None:
@@ -398,8 +515,8 @@ class CodexAppServerClient:
             state = self._get_or_create_live_state_locked(thread_id)
             state["activeTurnId"] = turn_id
             state["thinkingSince"] = time.time()
-            state["agentOrder"] = []
-            state["agentItems"] = {}
+            state["itemOrder"] = []
+            state["items"] = {}
             live_state = self._serialize_live_state_locked(state)
         if publish_event:
             self._event_hub.publish(
@@ -411,6 +528,439 @@ class CodexAppServerClient:
                 }
             )
 
+    def _get_or_create_live_item_locked(
+        self,
+        state: dict[str, Any],
+        item_id: str,
+        item_type: str,
+        *,
+        phase: str | None = None,
+    ) -> dict[str, Any]:
+        item = state["items"].get(item_id)
+        if item is None:
+            item = {
+                "type": item_type,
+                "text": "",
+                "phase": phase,
+                "completed": False,
+                "visible": False,
+            }
+            if item_type == "reasoning":
+                item["summary"] = []
+                item["content"] = []
+            if item_type == "commandExecution":
+                item["command"] = ""
+                item["cwd"] = ""
+                item["status"] = None
+                item["processId"] = None
+                item["exitCode"] = None
+                item["durationMs"] = None
+                item["terminalInputCount"] = 0
+            if item_type not in {"agentMessage", "plan", "reasoning", "commandExecution"}:
+                item["rawItem"] = {}
+            if item_type == "fileChange":
+                item["deltaText"] = ""
+            if item_type == "mcpToolCall":
+                item["progressMessages"] = []
+            state["items"][item_id] = item
+            state["itemOrder"].append(item_id)
+            return item
+
+        item["type"] = item_type
+        if phase is not None or item_type == "agentMessage":
+            item["phase"] = phase
+        if item_type == "reasoning":
+            item.setdefault("summary", [])
+            item.setdefault("content", [])
+        if item_type == "commandExecution":
+            item.setdefault("command", "")
+            item.setdefault("cwd", "")
+            item.setdefault("status", None)
+            item.setdefault("processId", None)
+            item.setdefault("exitCode", None)
+            item.setdefault("durationMs", None)
+            item.setdefault("terminalInputCount", 0)
+        if item_type not in {"agentMessage", "plan", "reasoning", "commandExecution"}:
+            item.setdefault("rawItem", {})
+        if item_type == "fileChange":
+            item.setdefault("deltaText", "")
+        if item_type == "mcpToolCall":
+            item.setdefault("progressMessages", [])
+        return item
+
+    def _remove_live_item_locked(self, state: dict[str, Any], item_id: str) -> None:
+        state["items"].pop(item_id, None)
+        state["itemOrder"] = [existing_item_id for existing_item_id in state["itemOrder"] if existing_item_id != item_id]
+
+    def _format_turn_plan_text(
+        self,
+        explanation: str | None,
+        plan_steps: list[dict[str, Any]],
+    ) -> str:
+        lines: list[str] = []
+        explanation_text = (explanation or "").strip()
+        if explanation_text:
+            lines.append(explanation_text)
+
+        status_prefixes = {
+            "pending": "[ ]",
+            "inProgress": "[~]",
+            "completed": "[x]",
+        }
+        for step in plan_steps:
+            step_text = str(step.get("step", "")).strip()
+            if not step_text:
+                continue
+            prefix = status_prefixes.get(step.get("status"), "[-]")
+            lines.append(f"{prefix} {step_text}")
+        return "\n".join(lines).strip()
+
+    def _format_reasoning_text(
+        self,
+        summary_parts: list[Any],
+        content_parts: list[Any],
+    ) -> str:
+        summary_lines = [str(part).strip() for part in summary_parts if str(part).strip()]
+        content_lines = [str(part).strip() for part in content_parts if str(part).strip()]
+
+        sections: list[str] = []
+        if summary_lines:
+            sections.append("Summary:\n" + "\n".join(f"- {line}" for line in summary_lines))
+        if content_lines:
+            sections.append("Content:\n" + "\n\n".join(content_lines))
+        return "\n\n".join(sections).strip()
+
+    def _command_message_payload(
+        self,
+        *,
+        command: str | None,
+        cwd: str | None,
+        status: str | None,
+        output: str | None,
+        exit_code: Any,
+        duration_ms: Any,
+        process_id: str | None,
+        terminal_input_count: int = 0,
+        completed: bool = True,
+        item_id: str | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "role": "command",
+            "text": str(output or ""),
+            "command": str(command or ""),
+            "cwd": str(cwd or ""),
+            "status": status,
+            "exitCode": exit_code,
+            "durationMs": duration_ms,
+            "processId": process_id,
+            "terminalInputCount": terminal_input_count,
+            "completed": completed,
+        }
+        if item_id:
+            payload["itemId"] = item_id
+            payload["type"] = "commandExecution"
+        return payload
+
+    def _merge_command_item_data(
+        self,
+        existing: dict[str, Any],
+        item: dict[str, Any],
+    ) -> None:
+        existing["command"] = str(item.get("command") or "")
+        existing["cwd"] = str(item.get("cwd") or "")
+        existing["status"] = item.get("status")
+        existing["processId"] = item.get("processId")
+        existing["exitCode"] = item.get("exitCode")
+        existing["durationMs"] = item.get("durationMs")
+        aggregated_output = item.get("aggregatedOutput")
+        if aggregated_output is not None:
+            existing["text"] = str(aggregated_output)
+
+    def _json_text(self, value: Any) -> str:
+        try:
+            return json.dumps(value, indent=2, ensure_ascii=True)
+        except TypeError:
+            return json.dumps(str(value), indent=2, ensure_ascii=True)
+
+    def _compact_meta_parts(self, *parts: Any) -> list[str]:
+        values: list[str] = []
+        for part in parts:
+            text = str(part or "").strip()
+            if text:
+                values.append(text)
+        return values
+
+    def _structured_message_visible(self, payload: dict[str, Any]) -> bool:
+        if payload.get("text"):
+            return True
+        if payload.get("title"):
+            return True
+        return bool(payload.get("metaParts"))
+
+    def _structured_message_payload(
+        self,
+        *,
+        role: str,
+        label: str,
+        title: str | None = None,
+        text: str | None = None,
+        meta_parts: list[str] | None = None,
+        body_is_code: bool = False,
+        completed: bool = True,
+        item_id: str | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "role": role,
+            "type": role,
+            "label": label,
+            "title": str(title or ""),
+            "text": str(text or ""),
+            "metaParts": meta_parts or [],
+            "bodyIsCode": body_is_code,
+            "completed": completed,
+        }
+        if item_id:
+            payload["itemId"] = item_id
+        return payload
+
+    def _format_patch_change_header(self, change: dict[str, Any]) -> str:
+        path = str(change.get("path") or "").strip() or "(unknown path)"
+        kind = change.get("kind", {})
+        kind_type = str(kind.get("type") or "update")
+        if kind_type == "add":
+            return f"add {path}"
+        if kind_type == "delete":
+            return f"delete {path}"
+        move_path = str(kind.get("move_path") or "").strip()
+        if move_path:
+            return f"update {path} -> {move_path}"
+        return f"update {path}"
+
+    def _format_file_change_text(self, changes: list[dict[str, Any]], delta_text: str | None = None) -> str:
+        streamed = str(delta_text or "").rstrip()
+        if streamed:
+            return streamed
+
+        blocks: list[str] = []
+        for change in changes:
+            header = self._format_patch_change_header(change)
+            diff = str(change.get("diff") or "").rstrip()
+            blocks.append(f"{header}\n{diff}".rstrip())
+        return "\n\n".join(blocks).strip()
+
+    def _format_dynamic_tool_content(self, content_items: list[dict[str, Any]] | None) -> str:
+        if not content_items:
+            return ""
+        lines: list[str] = []
+        for item in content_items:
+            item_type = item.get("type")
+            if item_type == "inputText":
+                lines.append(str(item.get("text") or ""))
+            elif item_type == "inputImage":
+                lines.append(f"[image] {item.get('imageUrl')}")
+            else:
+                lines.append(self._json_text(item))
+        return "\n".join(line for line in lines if line)
+
+    def _structured_item_message_payload(
+        self,
+        item_type: str,
+        item: dict[str, Any],
+        *,
+        completed: bool,
+        item_id: str | None = None,
+        delta_text: str | None = None,
+        progress_messages: list[str] | None = None,
+    ) -> dict[str, Any] | None:
+        if item_type == "fileChange":
+            changes = item.get("changes", [])
+            text = self._format_file_change_text(changes, delta_text)
+            payload = self._structured_message_payload(
+                role="fileChange",
+                label="File Change",
+                title=f"{len(changes)} change{'s' if len(changes) != 1 else ''}",
+                text=text,
+                meta_parts=self._compact_meta_parts(item.get("status")),
+                body_is_code=bool(text),
+                completed=completed,
+                item_id=item_id,
+            )
+            return payload if self._structured_message_visible(payload) else None
+
+        if item_type == "mcpToolCall":
+            body_sections: list[str] = []
+            arguments = item.get("arguments")
+            if arguments is not None:
+                body_sections.append("Arguments:\n" + self._json_text(arguments))
+            if progress_messages:
+                body_sections.append("Progress:\n" + "\n".join(progress_messages))
+            error = item.get("error")
+            result = item.get("result")
+            if error:
+                body_sections.append("Error:\n" + self._json_text(error))
+            elif result is not None:
+                body_sections.append("Result:\n" + self._json_text(result))
+            payload = self._structured_message_payload(
+                role="mcpToolCall",
+                label="MCP Tool",
+                title=".".join(part for part in [str(item.get("server") or ""), str(item.get("tool") or "")] if part),
+                text="\n\n".join(section for section in body_sections if section).strip(),
+                meta_parts=self._compact_meta_parts(item.get("status"), f"{item.get('durationMs')}ms" if item.get("durationMs") is not None else None),
+                body_is_code=bool(body_sections),
+                completed=completed,
+                item_id=item_id,
+            )
+            return payload if self._structured_message_visible(payload) else None
+
+        if item_type == "dynamicToolCall":
+            body_sections = []
+            arguments = item.get("arguments")
+            if arguments is not None:
+                body_sections.append("Arguments:\n" + self._json_text(arguments))
+            content_text = self._format_dynamic_tool_content(item.get("contentItems"))
+            if content_text:
+                body_sections.append("Output:\n" + content_text)
+            success = item.get("success")
+            success_text = None if success is None else f"success={success}"
+            payload = self._structured_message_payload(
+                role="dynamicToolCall",
+                label="Dynamic Tool",
+                title=str(item.get("tool") or ""),
+                text="\n\n".join(section for section in body_sections if section).strip(),
+                meta_parts=self._compact_meta_parts(item.get("status"), success_text, f"{item.get('durationMs')}ms" if item.get("durationMs") is not None else None),
+                body_is_code=bool(body_sections),
+                completed=completed,
+                item_id=item_id,
+            )
+            return payload if self._structured_message_visible(payload) else None
+
+        if item_type == "collabAgentToolCall":
+            body_sections = []
+            prompt = str(item.get("prompt") or "").strip()
+            if prompt:
+                body_sections.append("Prompt:\n" + prompt)
+            receiver_ids = item.get("receiverThreadIds", [])
+            if receiver_ids:
+                body_sections.append("Receivers:\n" + "\n".join(str(receiver_id) for receiver_id in receiver_ids))
+            agents_states = item.get("agentsStates")
+            if agents_states:
+                body_sections.append("Agent States:\n" + self._json_text(agents_states))
+            payload = self._structured_message_payload(
+                role="collabAgentToolCall",
+                label="Collab Agent",
+                title=str(item.get("tool") or ""),
+                text="\n\n".join(section for section in body_sections if section).strip(),
+                meta_parts=self._compact_meta_parts(item.get("status"), f"from {item.get('senderThreadId')}" if item.get("senderThreadId") else None, item.get("model"), item.get("reasoningEffort")),
+                body_is_code=bool(agents_states),
+                completed=completed,
+                item_id=item_id,
+            )
+            return payload if self._structured_message_visible(payload) else None
+
+        if item_type == "webSearch":
+            action = item.get("action")
+            action_type = action.get("type") if isinstance(action, dict) else None
+            text = ""
+            if action is not None:
+                text = self._json_text(action)
+            payload = self._structured_message_payload(
+                role="webSearch",
+                label="Web Search",
+                title=str(item.get("query") or ""),
+                text=text,
+                meta_parts=self._compact_meta_parts(action_type),
+                body_is_code=bool(text),
+                completed=completed,
+                item_id=item_id,
+            )
+            return payload if self._structured_message_visible(payload) else None
+
+        if item_type == "imageView":
+            payload = self._structured_message_payload(
+                role="imageView",
+                label="Image View",
+                title=str(item.get("path") or ""),
+                completed=completed,
+                item_id=item_id,
+            )
+            return payload if self._structured_message_visible(payload) else None
+
+        if item_type == "imageGeneration":
+            body_sections = []
+            revised_prompt = str(item.get("revisedPrompt") or "").strip()
+            if revised_prompt:
+                body_sections.append("Revised Prompt:\n" + revised_prompt)
+            result = str(item.get("result") or "").strip()
+            if result:
+                body_sections.append("Result:\n" + result)
+            payload = self._structured_message_payload(
+                role="imageGeneration",
+                label="Image Generation",
+                title=str(item.get("status") or ""),
+                text="\n\n".join(body_sections).strip(),
+                meta_parts=self._compact_meta_parts(item.get("status")),
+                body_is_code=False,
+                completed=completed,
+                item_id=item_id,
+            )
+            return payload if self._structured_message_visible(payload) else None
+
+        if item_type == "enteredReviewMode":
+            payload = self._structured_message_payload(
+                role="enteredReviewMode",
+                label="Review Mode",
+                title="Entered",
+                text=str(item.get("review") or "").strip(),
+                completed=completed,
+                item_id=item_id,
+            )
+            return payload if self._structured_message_visible(payload) else None
+
+        if item_type == "exitedReviewMode":
+            payload = self._structured_message_payload(
+                role="exitedReviewMode",
+                label="Review Mode",
+                title="Exited",
+                text=str(item.get("review") or "").strip(),
+                completed=completed,
+                item_id=item_id,
+            )
+            return payload if self._structured_message_visible(payload) else None
+
+        if item_type == "contextCompaction":
+            return self._structured_message_payload(
+                role="contextCompaction",
+                label="Context",
+                title="Compaction",
+                text="Conversation context was compacted.",
+                completed=completed,
+                item_id=item_id,
+            )
+
+        return None
+
+    def _structured_live_item_message_payload(self, item_id: str, item: dict[str, Any]) -> dict[str, Any] | None:
+        raw_item = item.get("rawItem", {})
+        return self._structured_item_message_payload(
+            item.get("type", ""),
+            raw_item if isinstance(raw_item, dict) else {},
+            completed=item.get("completed", False),
+            item_id=item_id,
+            delta_text=str(item.get("deltaText") or ""),
+            progress_messages=[str(message) for message in item.get("progressMessages", [])],
+        )
+
+    def _structured_live_item_visible(self, item: dict[str, Any]) -> bool:
+        payload = self._structured_live_item_message_payload("", item)
+        return payload is not None and self._structured_message_visible(payload)
+
+    def _merge_structured_item_data(self, existing: dict[str, Any], item: dict[str, Any]) -> None:
+        existing["rawItem"] = deepcopy(item)
+
+    def _ensure_text_part(self, parts: list[str], index: int) -> None:
+        while len(parts) <= index:
+            parts.append("")
+
     def _record_agent_message_started(self, thread_id: str, turn_id: str, item: dict[str, Any]) -> None:
         item_id = item.get("id")
         if not item_id:
@@ -421,16 +971,12 @@ class CodexAppServerClient:
         with self._live_state_lock:
             state = self._get_or_create_live_state_locked(thread_id)
             state["activeTurnId"] = turn_id
-            existing = state["agentItems"].get(item_id)
-            if existing is None:
-                existing = {
-                    "text": "",
-                    "phase": phase,
-                    "completed": False,
-                    "visible": False,
-                }
-                state["agentItems"][item_id] = existing
-                state["agentOrder"].append(item_id)
+            existing = self._get_or_create_live_item_locked(
+                state,
+                item_id,
+                "agentMessage",
+                phase=phase,
+            )
             was_visible = existing["visible"]
             existing["phase"] = phase
             existing["completed"] = False
@@ -465,16 +1011,7 @@ class CodexAppServerClient:
         with self._live_state_lock:
             state = self._get_or_create_live_state_locked(thread_id)
             state["activeTurnId"] = turn_id
-            item = state["agentItems"].get(item_id)
-            if item is None:
-                item = {
-                    "text": "",
-                    "phase": None,
-                    "completed": False,
-                    "visible": False,
-                }
-                state["agentItems"][item_id] = item
-                state["agentOrder"].append(item_id)
+            item = self._get_or_create_live_item_locked(state, item_id, "agentMessage")
             was_visible = item["visible"]
             item["text"] = f'{item["text"]}{delta}'
             if item["text"]:
@@ -506,16 +1043,12 @@ class CodexAppServerClient:
         with self._live_state_lock:
             state = self._get_or_create_live_state_locked(thread_id)
             state["activeTurnId"] = turn_id
-            existing = state["agentItems"].get(item_id)
-            if existing is None:
-                existing = {
-                    "text": "",
-                    "phase": phase,
-                    "completed": False,
-                    "visible": False,
-                }
-                state["agentItems"][item_id] = existing
-                state["agentOrder"].append(item_id)
+            existing = self._get_or_create_live_item_locked(
+                state,
+                item_id,
+                "agentMessage",
+                phase=phase,
+            )
             if text:
                 existing["text"] = text
                 existing["visible"] = True
@@ -530,6 +1063,464 @@ class CodexAppServerClient:
                 "itemId": item_id,
                 "text": text,
                 "phase": phase,
+                "live": live_state,
+            }
+        )
+
+    def _record_plan_started(self, thread_id: str, turn_id: str, item: dict[str, Any]) -> None:
+        item_id = item.get("id")
+        if not item_id:
+            return
+        text = item.get("text", "") or ""
+        with self._live_state_lock:
+            state = self._get_or_create_live_state_locked(thread_id)
+            state["activeTurnId"] = turn_id
+            self._remove_live_item_locked(state, f"turn-plan:{turn_id}")
+            existing = self._get_or_create_live_item_locked(state, item_id, "plan")
+            existing["completed"] = False
+            if text:
+                existing["text"] = text
+                existing["visible"] = True
+            live_state = self._serialize_live_state_locked(state)
+        self._event_hub.publish(
+            {
+                "kind": "plan_started",
+                "threadId": thread_id,
+                "turnId": turn_id,
+                "itemId": item_id,
+                "text": text,
+                "live": live_state,
+            }
+        )
+
+    def _record_plan_delta(self, thread_id: str, turn_id: str, item_id: str, delta: str) -> None:
+        with self._live_state_lock:
+            state = self._get_or_create_live_state_locked(thread_id)
+            state["activeTurnId"] = turn_id
+            self._remove_live_item_locked(state, f"turn-plan:{turn_id}")
+            item = self._get_or_create_live_item_locked(state, item_id, "plan")
+            item["text"] = f'{item["text"]}{delta}'
+            if item["text"]:
+                item["visible"] = True
+            live_state = self._serialize_live_state_locked(state)
+            full_text = item["text"]
+        self._event_hub.publish(
+            {
+                "kind": "plan_delta",
+                "threadId": thread_id,
+                "turnId": turn_id,
+                "itemId": item_id,
+                "delta": delta,
+                "text": full_text,
+                "live": live_state,
+            }
+        )
+
+    def _record_plan_completed(self, thread_id: str, turn_id: str, item: dict[str, Any]) -> None:
+        item_id = item.get("id")
+        if not item_id:
+            return
+        text = item.get("text", "") or ""
+        with self._live_state_lock:
+            state = self._get_or_create_live_state_locked(thread_id)
+            state["activeTurnId"] = turn_id
+            self._remove_live_item_locked(state, f"turn-plan:{turn_id}")
+            existing = self._get_or_create_live_item_locked(state, item_id, "plan")
+            if text:
+                existing["text"] = text
+                existing["visible"] = True
+            existing["completed"] = True
+            live_state = self._serialize_live_state_locked(state)
+        self._event_hub.publish(
+            {
+                "kind": "plan_completed",
+                "threadId": thread_id,
+                "turnId": turn_id,
+                "itemId": item_id,
+                "text": text,
+                "live": live_state,
+            }
+        )
+
+    def _record_turn_plan_updated(
+        self,
+        thread_id: str,
+        turn_id: str,
+        explanation: str | None,
+        plan_steps: list[dict[str, Any]],
+    ) -> None:
+        item_id = f"turn-plan:{turn_id}"
+        text = self._format_turn_plan_text(explanation, plan_steps)
+        with self._live_state_lock:
+            state = self._get_or_create_live_state_locked(thread_id)
+            state["activeTurnId"] = turn_id
+            has_explicit_plan = any(
+                existing_item.get("type") == "plan" and existing_item_id != item_id
+                for existing_item_id, existing_item in state["items"].items()
+            )
+            if has_explicit_plan:
+                live_state = self._serialize_live_state_locked(state)
+            else:
+                existing = self._get_or_create_live_item_locked(state, item_id, "plan")
+                existing["text"] = text
+                existing["visible"] = bool(text)
+                existing["completed"] = False
+                live_state = self._serialize_live_state_locked(state)
+        self._event_hub.publish(
+            {
+                "kind": "turn_plan_updated",
+                "threadId": thread_id,
+                "turnId": turn_id,
+                "itemId": item_id,
+                "explanation": explanation,
+                "plan": plan_steps,
+                "text": text,
+                "live": live_state,
+            }
+        )
+
+    def _record_reasoning_started(self, thread_id: str, turn_id: str, item: dict[str, Any]) -> None:
+        item_id = item.get("id")
+        if not item_id:
+            return
+        with self._live_state_lock:
+            state = self._get_or_create_live_state_locked(thread_id)
+            state["activeTurnId"] = turn_id
+            existing = self._get_or_create_live_item_locked(state, item_id, "reasoning")
+            existing["summary"] = [str(part) for part in item.get("summary", [])]
+            existing["content"] = [str(part) for part in item.get("content", [])]
+            existing["text"] = self._format_reasoning_text(existing["summary"], existing["content"])
+            existing["visible"] = bool(existing["text"])
+            existing["completed"] = False
+            live_state = self._serialize_live_state_locked(state)
+        self._event_hub.publish(
+            {
+                "kind": "reasoning_started",
+                "threadId": thread_id,
+                "turnId": turn_id,
+                "itemId": item_id,
+                "text": existing["text"],
+                "live": live_state,
+            }
+        )
+
+    def _record_reasoning_summary_part_added(
+        self,
+        thread_id: str,
+        turn_id: str,
+        item_id: str,
+        summary_index: int,
+    ) -> None:
+        with self._live_state_lock:
+            state = self._get_or_create_live_state_locked(thread_id)
+            state["activeTurnId"] = turn_id
+            item = self._get_or_create_live_item_locked(state, item_id, "reasoning")
+            summary = item.setdefault("summary", [])
+            self._ensure_text_part(summary, summary_index)
+            item["text"] = self._format_reasoning_text(summary, item.setdefault("content", []))
+            item["visible"] = bool(item["text"])
+            live_state = self._serialize_live_state_locked(state)
+            full_text = item["text"]
+        self._event_hub.publish(
+            {
+                "kind": "reasoning_updated",
+                "threadId": thread_id,
+                "turnId": turn_id,
+                "itemId": item_id,
+                "text": full_text,
+                "live": live_state,
+            }
+        )
+
+    def _record_reasoning_summary_delta(
+        self,
+        thread_id: str,
+        turn_id: str,
+        item_id: str,
+        summary_index: int,
+        delta: str,
+    ) -> None:
+        with self._live_state_lock:
+            state = self._get_or_create_live_state_locked(thread_id)
+            state["activeTurnId"] = turn_id
+            item = self._get_or_create_live_item_locked(state, item_id, "reasoning")
+            summary = item.setdefault("summary", [])
+            self._ensure_text_part(summary, summary_index)
+            summary[summary_index] = f'{summary[summary_index]}{delta}'
+            item["text"] = self._format_reasoning_text(summary, item.setdefault("content", []))
+            item["visible"] = bool(item["text"])
+            live_state = self._serialize_live_state_locked(state)
+            full_text = item["text"]
+        self._event_hub.publish(
+            {
+                "kind": "reasoning_updated",
+                "threadId": thread_id,
+                "turnId": turn_id,
+                "itemId": item_id,
+                "text": full_text,
+                "live": live_state,
+            }
+        )
+
+    def _record_reasoning_content_delta(
+        self,
+        thread_id: str,
+        turn_id: str,
+        item_id: str,
+        content_index: int,
+        delta: str,
+    ) -> None:
+        with self._live_state_lock:
+            state = self._get_or_create_live_state_locked(thread_id)
+            state["activeTurnId"] = turn_id
+            item = self._get_or_create_live_item_locked(state, item_id, "reasoning")
+            content = item.setdefault("content", [])
+            self._ensure_text_part(content, content_index)
+            content[content_index] = f'{content[content_index]}{delta}'
+            item["text"] = self._format_reasoning_text(item.setdefault("summary", []), content)
+            item["visible"] = bool(item["text"])
+            live_state = self._serialize_live_state_locked(state)
+            full_text = item["text"]
+        self._event_hub.publish(
+            {
+                "kind": "reasoning_updated",
+                "threadId": thread_id,
+                "turnId": turn_id,
+                "itemId": item_id,
+                "text": full_text,
+                "live": live_state,
+            }
+        )
+
+    def _record_reasoning_completed(self, thread_id: str, turn_id: str, item: dict[str, Any]) -> None:
+        item_id = item.get("id")
+        if not item_id:
+            return
+        with self._live_state_lock:
+            state = self._get_or_create_live_state_locked(thread_id)
+            state["activeTurnId"] = turn_id
+            existing = self._get_or_create_live_item_locked(state, item_id, "reasoning")
+            existing["summary"] = [str(part) for part in item.get("summary", [])]
+            existing["content"] = [str(part) for part in item.get("content", [])]
+            existing["text"] = self._format_reasoning_text(existing["summary"], existing["content"])
+            existing["visible"] = bool(existing["text"])
+            existing["completed"] = True
+            live_state = self._serialize_live_state_locked(state)
+        self._event_hub.publish(
+            {
+                "kind": "reasoning_completed",
+                "threadId": thread_id,
+                "turnId": turn_id,
+                "itemId": item_id,
+                "text": existing["text"],
+                "live": live_state,
+            }
+        )
+
+    def _record_command_started(self, thread_id: str, turn_id: str, item: dict[str, Any]) -> None:
+        item_id = item.get("id")
+        if not item_id:
+            return
+        with self._live_state_lock:
+            state = self._get_or_create_live_state_locked(thread_id)
+            state["activeTurnId"] = turn_id
+            existing = self._get_or_create_live_item_locked(state, item_id, "commandExecution")
+            self._merge_command_item_data(existing, item)
+            existing["completed"] = False
+            existing["visible"] = bool(existing["command"] or existing["text"] or existing["status"])
+            live_state = self._serialize_live_state_locked(state)
+        self._event_hub.publish(
+            {
+                "kind": "command_execution_started",
+                "threadId": thread_id,
+                "turnId": turn_id,
+                "itemId": item_id,
+                "live": live_state,
+            }
+        )
+
+    def _record_command_output_delta(
+        self,
+        thread_id: str,
+        turn_id: str,
+        item_id: str,
+        delta: str,
+    ) -> None:
+        with self._live_state_lock:
+            state = self._get_or_create_live_state_locked(thread_id)
+            state["activeTurnId"] = turn_id
+            item = self._get_or_create_live_item_locked(state, item_id, "commandExecution")
+            item["status"] = item.get("status") or "inProgress"
+            item["text"] = f'{item["text"]}{delta}'
+            item["visible"] = bool(item["command"] or item["text"] or item["status"])
+            live_state = self._serialize_live_state_locked(state)
+        self._event_hub.publish(
+            {
+                "kind": "command_execution_updated",
+                "threadId": thread_id,
+                "turnId": turn_id,
+                "itemId": item_id,
+                "live": live_state,
+            }
+        )
+
+    def _record_command_terminal_interaction(
+        self,
+        thread_id: str,
+        turn_id: str,
+        item_id: str,
+        process_id: str | None,
+    ) -> None:
+        with self._live_state_lock:
+            state = self._get_or_create_live_state_locked(thread_id)
+            state["activeTurnId"] = turn_id
+            item = self._get_or_create_live_item_locked(state, item_id, "commandExecution")
+            item["processId"] = process_id
+            item["terminalInputCount"] = int(item.get("terminalInputCount", 0) or 0) + 1
+            item["visible"] = bool(item["command"] or item["text"] or item["status"])
+            live_state = self._serialize_live_state_locked(state)
+        self._event_hub.publish(
+            {
+                "kind": "command_execution_updated",
+                "threadId": thread_id,
+                "turnId": turn_id,
+                "itemId": item_id,
+                "live": live_state,
+            }
+        )
+
+    def _record_command_completed(self, thread_id: str, turn_id: str, item: dict[str, Any]) -> None:
+        item_id = item.get("id")
+        if not item_id:
+            return
+        with self._live_state_lock:
+            state = self._get_or_create_live_state_locked(thread_id)
+            state["activeTurnId"] = turn_id
+            existing = self._get_or_create_live_item_locked(state, item_id, "commandExecution")
+            self._merge_command_item_data(existing, item)
+            existing["completed"] = True
+            existing["visible"] = bool(existing["command"] or existing["text"] or existing["status"])
+            live_state = self._serialize_live_state_locked(state)
+        self._event_hub.publish(
+            {
+                "kind": "command_execution_completed",
+                "threadId": thread_id,
+                "turnId": turn_id,
+                "itemId": item_id,
+                "live": live_state,
+            }
+        )
+
+    def _record_structured_item_started(self, thread_id: str, turn_id: str, item: dict[str, Any]) -> None:
+        item_id = item.get("id")
+        item_type = item.get("type")
+        if not item_id or not item_type:
+            return
+        with self._live_state_lock:
+            state = self._get_or_create_live_state_locked(thread_id)
+            state["activeTurnId"] = turn_id
+            existing = self._get_or_create_live_item_locked(state, item_id, item_type)
+            self._merge_structured_item_data(existing, item)
+            existing["completed"] = False
+            existing["visible"] = self._structured_live_item_visible(existing)
+            live_state = self._serialize_live_state_locked(state)
+        self._event_hub.publish(
+            {
+                "kind": "structured_item_started",
+                "threadId": thread_id,
+                "turnId": turn_id,
+                "itemId": item_id,
+                "itemType": item_type,
+                "live": live_state,
+            }
+        )
+
+    def _record_structured_item_completed(self, thread_id: str, turn_id: str, item: dict[str, Any]) -> None:
+        item_id = item.get("id")
+        item_type = item.get("type")
+        if not item_id or not item_type:
+            return
+        with self._live_state_lock:
+            state = self._get_or_create_live_state_locked(thread_id)
+            state["activeTurnId"] = turn_id
+            existing = self._get_or_create_live_item_locked(state, item_id, item_type)
+            self._merge_structured_item_data(existing, item)
+            existing["completed"] = True
+            existing["visible"] = self._structured_live_item_visible(existing)
+            live_state = self._serialize_live_state_locked(state)
+        self._event_hub.publish(
+            {
+                "kind": "structured_item_completed",
+                "threadId": thread_id,
+                "turnId": turn_id,
+                "itemId": item_id,
+                "itemType": item_type,
+                "live": live_state,
+            }
+        )
+
+    def _record_file_change_delta(self, thread_id: str, turn_id: str, item_id: str, delta: str) -> None:
+        with self._live_state_lock:
+            state = self._get_or_create_live_state_locked(thread_id)
+            state["activeTurnId"] = turn_id
+            item = self._get_or_create_live_item_locked(state, item_id, "fileChange")
+            item["deltaText"] = f'{item.get("deltaText", "")}{delta}'
+            item["visible"] = self._structured_live_item_visible(item)
+            live_state = self._serialize_live_state_locked(state)
+        self._event_hub.publish(
+            {
+                "kind": "structured_item_updated",
+                "threadId": thread_id,
+                "turnId": turn_id,
+                "itemId": item_id,
+                "itemType": "fileChange",
+                "live": live_state,
+            }
+        )
+
+    def _record_mcp_progress(
+        self,
+        thread_id: str,
+        turn_id: str,
+        item_id: str,
+        message: str,
+    ) -> None:
+        with self._live_state_lock:
+            state = self._get_or_create_live_state_locked(thread_id)
+            state["activeTurnId"] = turn_id
+            item = self._get_or_create_live_item_locked(state, item_id, "mcpToolCall")
+            progress_messages = item.setdefault("progressMessages", [])
+            progress_messages.append(str(message))
+            item["visible"] = self._structured_live_item_visible(item)
+            live_state = self._serialize_live_state_locked(state)
+        self._event_hub.publish(
+            {
+                "kind": "structured_item_updated",
+                "threadId": thread_id,
+                "turnId": turn_id,
+                "itemId": item_id,
+                "itemType": "mcpToolCall",
+                "live": live_state,
+            }
+        )
+
+    def _record_context_compacted(self, thread_id: str, turn_id: str) -> None:
+        item_id = f"context-compaction:{turn_id}:{next(self._synthetic_item_counter)}"
+        with self._live_state_lock:
+            state = self._get_or_create_live_state_locked(thread_id)
+            state["activeTurnId"] = turn_id
+            item = self._get_or_create_live_item_locked(state, item_id, "contextCompaction")
+            item["rawItem"] = {"id": item_id, "type": "contextCompaction"}
+            item["completed"] = True
+            item["visible"] = self._structured_live_item_visible(item)
+            live_state = self._serialize_live_state_locked(state)
+        self._event_hub.publish(
+            {
+                "kind": "structured_item_completed",
+                "threadId": thread_id,
+                "turnId": turn_id,
+                "itemId": item_id,
+                "itemType": "contextCompaction",
                 "live": live_state,
             }
         )
@@ -572,7 +1563,7 @@ class CodexAppServerClient:
                 "clientInfo": {
                     "name": "wodex",
                     "title": "Wodex",
-                    "version": "0.1.1",
+                    "version": "0.1.2",
                 }
             },
         )
@@ -619,6 +1610,7 @@ class CodexAppServerClient:
     def _send(self, message: dict[str, Any]) -> None:
         encoded = json.dumps(message)
         with self._write_lock:
+            self._rpc_logger.write("client", message)
             if self._process.stdin is None:
                 raise RuntimeError("codex app-server stdin is unavailable.")
             self._process.stdin.write(encoded + "\n")
@@ -634,6 +1626,7 @@ class CodexAppServerClient:
                 continue
 
             message = json.loads(payload)
+            self._rpc_logger.write("server", message)
             if "id" in message:
                 with self._pending_lock:
                     response_queue = self._pending.get(message["id"])
@@ -681,8 +1674,17 @@ class CodexAppServerClient:
             thread_id = params.get("threadId")
             turn_id = params.get("turnId")
             item = params.get("item", {})
-            if thread_id and turn_id and item.get("type") == "agentMessage":
+            item_type = item.get("type")
+            if thread_id and turn_id and item_type == "agentMessage":
                 self._record_agent_message_started(thread_id, turn_id, item)
+            elif thread_id and turn_id and item_type == "plan":
+                self._record_plan_started(thread_id, turn_id, item)
+            elif thread_id and turn_id and item_type == "reasoning":
+                self._record_reasoning_started(thread_id, turn_id, item)
+            elif thread_id and turn_id and item_type == "commandExecution":
+                self._record_command_started(thread_id, turn_id, item)
+            elif thread_id and turn_id and item_type:
+                self._record_structured_item_started(thread_id, turn_id, item)
             return
 
         if method == "item/agentMessage/delta":
@@ -694,12 +1696,129 @@ class CodexAppServerClient:
                 self._record_agent_message_delta(thread_id, turn_id, item_id, delta)
             return
 
+        if method == "turn/plan/updated":
+            thread_id = params.get("threadId")
+            turn_id = params.get("turnId")
+            if thread_id and turn_id:
+                self._record_turn_plan_updated(
+                    thread_id,
+                    turn_id,
+                    params.get("explanation"),
+                    params.get("plan", []),
+                )
+            return
+
+        if method == "item/plan/delta":
+            thread_id = params.get("threadId")
+            turn_id = params.get("turnId")
+            item_id = params.get("itemId")
+            delta = params.get("delta", "")
+            if thread_id and turn_id and item_id:
+                self._record_plan_delta(thread_id, turn_id, item_id, delta)
+            return
+
+        if method == "item/reasoning/summaryPartAdded":
+            thread_id = params.get("threadId")
+            turn_id = params.get("turnId")
+            item_id = params.get("itemId")
+            summary_index = params.get("summaryIndex")
+            if (
+                thread_id
+                and turn_id
+                and item_id
+                and isinstance(summary_index, int)
+            ):
+                self._record_reasoning_summary_part_added(thread_id, turn_id, item_id, summary_index)
+            return
+
+        if method == "item/reasoning/summaryTextDelta":
+            thread_id = params.get("threadId")
+            turn_id = params.get("turnId")
+            item_id = params.get("itemId")
+            summary_index = params.get("summaryIndex")
+            delta = params.get("delta", "")
+            if (
+                thread_id
+                and turn_id
+                and item_id
+                and isinstance(summary_index, int)
+            ):
+                self._record_reasoning_summary_delta(thread_id, turn_id, item_id, summary_index, delta)
+            return
+
+        if method == "item/reasoning/textDelta":
+            thread_id = params.get("threadId")
+            turn_id = params.get("turnId")
+            item_id = params.get("itemId")
+            content_index = params.get("contentIndex")
+            delta = params.get("delta", "")
+            if (
+                thread_id
+                and turn_id
+                and item_id
+                and isinstance(content_index, int)
+            ):
+                self._record_reasoning_content_delta(thread_id, turn_id, item_id, content_index, delta)
+            return
+
+        if method == "item/commandExecution/outputDelta":
+            thread_id = params.get("threadId")
+            turn_id = params.get("turnId")
+            item_id = params.get("itemId")
+            delta = params.get("delta", "")
+            if thread_id and turn_id and item_id:
+                self._record_command_output_delta(thread_id, turn_id, item_id, delta)
+            return
+
+        if method == "item/commandExecution/terminalInteraction":
+            thread_id = params.get("threadId")
+            turn_id = params.get("turnId")
+            item_id = params.get("itemId")
+            process_id = params.get("processId")
+            if thread_id and turn_id and item_id:
+                self._record_command_terminal_interaction(thread_id, turn_id, item_id, process_id)
+            return
+
+        if method == "item/fileChange/outputDelta":
+            thread_id = params.get("threadId")
+            turn_id = params.get("turnId")
+            item_id = params.get("itemId")
+            delta = params.get("delta", "")
+            if thread_id and turn_id and item_id:
+                self._record_file_change_delta(thread_id, turn_id, item_id, delta)
+            return
+
+        if method == "item/mcpToolCall/progress":
+            thread_id = params.get("threadId")
+            turn_id = params.get("turnId")
+            item_id = params.get("itemId")
+            progress_message = params.get("message", "")
+            if thread_id and turn_id and item_id:
+                self._record_mcp_progress(thread_id, turn_id, item_id, progress_message)
+            return
+
+        if method == "thread/compacted":
+            thread_id = params.get("threadId")
+            turn_id = params.get("turnId")
+            if thread_id and turn_id:
+                self._record_context_compacted(thread_id, turn_id)
+            return
+
         if method == "item/completed":
             thread_id = params.get("threadId")
             turn_id = params.get("turnId")
             item = params.get("item", {})
-            if thread_id and turn_id and item.get("type") == "agentMessage":
+            item_type = item.get("type")
+            if thread_id and turn_id and item_type == "agentMessage":
                 self._record_agent_message_completed(thread_id, turn_id, item)
+            elif thread_id and turn_id and item_type == "plan":
+                self._record_plan_completed(thread_id, turn_id, item)
+            elif thread_id and turn_id and item_type == "reasoning":
+                self._record_reasoning_completed(thread_id, turn_id, item)
+            elif thread_id and turn_id and item_type == "commandExecution":
+                self._record_command_completed(thread_id, turn_id, item)
+            elif thread_id and turn_id and item_type:
+                self._record_structured_item_completed(thread_id, turn_id, item)
             return
 
         if method == "turn/completed":
@@ -758,6 +1877,7 @@ def initialize_runtime() -> dict[str, Any]:
     next_codex_client = CodexAppServerClient(
         default_cwd=config["codex"]["cwd"],
         thread_list_limit=config["codex"]["threadListLimit"],
+        rpc_log_directory=resolve_config_path(config["logging"]["directory"]),
     )
     next_window_registry = BrowserWindowRegistry(
         stale_seconds=config["windows"]["staleSeconds"],

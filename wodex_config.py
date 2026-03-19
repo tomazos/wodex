@@ -53,6 +53,9 @@ def default_wodex_config() -> dict[str, Any]:
             "staleSeconds": 120,
             "shutdownGraceSeconds": 3,
         },
+        "logging": {
+            "directory": "logs",
+        },
         "ui": {
             "fonts": {
                 "family": "Ubuntu Sans Mono",
@@ -178,6 +181,11 @@ def validate_runtime_config(config: dict[str, Any]) -> list[str]:
             errors.append(
                 f"Font file for `ui.fonts.files.{style_name}` is not a file: {resolved_path}"
             )
+    log_dir = resolve_config_path(config["logging"]["directory"])
+    if log_dir.exists() and not log_dir.is_dir():
+        errors.append(
+            f"Logging directory for `logging.directory` is not a directory: {log_dir}"
+        )
     return errors
 
 

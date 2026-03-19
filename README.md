@@ -1,6 +1,6 @@
 # Wodex
 
-Version: `0.1.1`
+Version: `0.1.2`
 
 Wodex is a local web UI for Codex, written by Codex. It starts a local `codex app-server` process, lists available Codex threads, and lets you browse and continue them in a browser.
 
@@ -11,6 +11,7 @@ The backend is a small Flask app served locally with Waitress rather than Flask'
 Requirements:
 
 - Python 3
+- Node.js and npm
 - `codex` installed and available on `PATH`
 - a working local Codex login/config
 
@@ -22,6 +23,7 @@ cd wodex
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+npm install
 ```
 
 Optional: add the launcher to your shell `PATH`:
@@ -38,6 +40,7 @@ On first launch, Wodex creates:
 - `~/.wodex/config.json`
 - `~/.wodex/config.schema.json`
 - `~/.wodex/fonts/`
+- `~/.wodex/logs/`
 
 The default UI font is the bundled Ubuntu Sans Mono font. The bundled font files are copied into `~/.wodex/fonts/` so the config can refer to them directly. Relative file paths inside the config are resolved from `~/.wodex`.
 The bundled font assets are shipped under the Ubuntu Font Licence 1.0, with the license text included in `static/fonts/`.
@@ -62,6 +65,9 @@ Default config:
     "heartbeatSeconds": 15,
     "staleSeconds": 120,
     "shutdownGraceSeconds": 3
+  },
+  "logging": {
+    "directory": "logs"
   },
   "ui": {
     "fonts": {
@@ -94,6 +100,7 @@ Configuration keys:
 - `windows.heartbeatSeconds`: browser heartbeat interval used to detect open windows
 - `windows.staleSeconds`: how long a quiet window can go before Wodex treats it as gone
 - `windows.shutdownGraceSeconds`: grace period before Wodex exits after the last window closes
+- `logging.directory`: root directory for per-`codex app-server` JSON-RPC traffic logs; relative paths are resolved from `~/.wodex`
 - `ui.fonts.family`: CSS font family name exposed to the page
 - `ui.fonts.sizePx`: base UI font size
 - `ui.fonts.files.*`: font files to serve for regular, bold, italic, and bold-italic faces
@@ -107,6 +114,7 @@ Configuration keys:
 - Sends prompts with `turn/start` when idle and `turn/steer` when a turn is already active
 - Streams live turn and assistant-message updates to the browser over server-sent events
 - Reads persisted thread history through `thread/read` when loading or refreshing a thread
+- Writes every raw JSON-RPC message sent to and received from `codex app-server` into a dated log file, and updates `~/.wodex/codex-latest.log` to point to the newest one
 - Shuts down automatically after the last Wodex browser window closes
 
 ## Run it
@@ -133,7 +141,30 @@ Launcher flags:
 
 Wodex uses your local Codex installation and inherits its auth/config behavior unless you change the backend startup code. If your local Codex config is unsandboxed, Wodex will be too.
 
+## Development
+
+Wodex now uses the CommonMark JavaScript reference implementation for markdown rendering, wrapped in `static/js/wodex_markdown.js`. The official CommonMark 0.31.2 spec text is vendored at `third_party/commonmark-spec/0.31.2/spec.txt`.
+
+Run the conformance suite with:
+
+```bash
+npm run test:commonmark
+```
+
 ## Change Log
+
+### 0.1.2
+
+- Wodex now renders persisted `plan` items in the transcript and shows live planning updates during active turns
+- Wodex now renders persisted `reasoning` items in the transcript and updates live reasoning blocks from streamed reasoning deltas
+- Wodex now renders `commandExecution` items when they appear in thread history and streams live command output, status, and terminal-interaction counts in the transcript
+- Wodex now renders the remaining persisted item types in the Session view, including file changes, tool calls, web search, image actions, review-mode entries, and context compaction, with live updates where the protocol exposes them
+- Wodex now renders user, assistant, and reasoning messages as sanitized markdown in the Session view, including a first pass at headings, lists, quotes, emphasis, links, and fenced code blocks
+- Wodex now renders LaTeX-style math in markdown messages using local KaTeX assets, including `\(...\)` and `\[...\]` notation plus common display environments
+- Wodex now updates the transcript incrementally during live turns instead of rebuilding the full chat on every streamed event
+- Prompt autosizing is now batched to animation frames, reuses cached style metrics, and avoids chat layout recomputation on every keystroke
+- Wodex now writes raw JSON-RPC traffic for each `codex app-server` process into `~/.wodex/logs/YYYY/MM/DD/codex-YYYYMMDDHHMM_UUID.log`, updates `~/.wodex/codex-latest.log`, and removes the old in-browser Log tab
+- Wodex markdown rendering is now packaged into a standalone CommonMark-based module, and the repo includes the official CommonMark 0.31.2 spec text plus a standalone conformance runner
 
 ### 0.1.1
 
